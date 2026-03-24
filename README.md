@@ -52,26 +52,24 @@ ralph init
 # Edit the prompt with your project context
 vim .ralph/PROMPT.md
 
-# Add stories
+# Option A: Brainstorm interactively with AI PM
+ralph brainstorm "add user authentication with OAuth"
+
+# Option B: Generate stories from a description
+ralph plan "add login page, password reset, session management"
+
+# Option C: Add stories manually
 ralph add "Add user login page" \
   "Create a login page with email/password fields" \
   "Login page renders at /login" \
   "Email and password fields present" \
   "Submit button calls auth API" \
-  "Error message shown on invalid credentials" \
-  "App builds successfully"
-
-ralph add "Add password reset flow" \
-  "Allow users to reset their password via email" \
-  "Forgot password link on login page" \
-  "Reset email sent on submit" \
-  "New password form at /reset-password" \
   "App builds successfully"
 
 # Check what's queued
 ralph status
 
-# Run the loop
+# Run the loop — implement + review, one story at a time
 ralph
 ```
 
@@ -80,10 +78,33 @@ ralph
 | Command | Description |
 |---|---|
 | `ralph init` | Initialize ralph in the current project |
+| `ralph brainstorm [topic]` | Interactive brainstorm session with AI PM |
+| `ralph plan "topic"` | Non-interactive: AI generates stories from a description |
+| `ralph import [file]` | Import stories from JSON (stdin or file) |
 | `ralph` or `ralph run` | Run the implement-review loop |
-| `ralph add "title" "desc" "c1" "c2"` | Add a story with acceptance criteria |
+| `ralph add "title" "desc" "c1" "c2"` | Add a single story manually |
 | `ralph status` | Show progress (done/total) |
 | `ralph reset <id>` | Reset a story to incomplete |
+
+### Brainstorm mode
+
+`ralph brainstorm` opens an **interactive Claude session** where you talk to an AI product manager. Describe your idea, answer questions, iterate on scope — then say "ship it" to generate stories.
+
+```bash
+ralph brainstorm "add user authentication"
+# Chat with the PM... refine the idea...
+# Say "ship it" → generates ralph-stories JSON
+# Copy the block → ralph import
+```
+
+### Plan mode
+
+`ralph plan` is the **non-interactive** version. Give it a description and it generates stories directly:
+
+```bash
+ralph plan "add OAuth login with Google and GitHub, password reset via email, session management"
+# → Generates stories → prompts to add them to ralph.json
+```
 
 ## Files
 

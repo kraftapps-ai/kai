@@ -1,9 +1,11 @@
 #!/bin/bash
 # Ralph — Autonomous AI developer loop for Claude Code
-# https://github.com/kraftapps-ai/ralph
+# https://github.com/julianocto/ralph
 #
 # Usage:
 #   ralph init              — Initialize ralph in current project
+#   ralph brainstorm [topic] — Brainstorm with AI PM, generates stories
+#   ralph plan [topic]      — Non-interactive: AI generates stories from a topic
 #   ralph                   — Run the loop (implement + review)
 #   ralph add "title" "description" "criteria1" "criteria2" ...
 #   ralph status            — Show remaining stories
@@ -326,13 +328,233 @@ Do NOT trust the implementer's self-report. Verify independently.")
     echo "🎉 Ralph finished after ${iteration} iterations."
 }
 
+cmd_brainstorm() {
+    topic="${1:-}"
+
+    if [ ! -f "$PRD_FILE" ]; then
+        echo "❌ ralph.json not found. Run 'ralph init' first."
+        exit 1
+    fi
+
+    # Build context about existing stories
+    existing=""
+    story_count=$(jq '.userStories | length' "$PRD_FILE")
+    if [ "$story_count" -gt 0 ]; then
+        existing="
+
+Existing stories in ralph.json (don't duplicate these):
+$(jq -r '.userStories[] | "- [\(if .passes then "done" else "todo" end)] \(.title)"' "$PRD_FILE")"
+    fi
+
+    # Build context about the project
+    project_context=""
+    if [ -f "$PROMPT_FILE" ]; then
+        project_context="
+
+Project context from .ralph/PROMPT.md:
+$(cat "$PROMPT_FILE")"
+    fi
+
+    # Build the PM system prompt
+    brainstorm_prompt="You are a senior product manager and technical architect. You're brainstorming with a developer to plan their next batch of work.
+
+Your job:
+1. Understand what they want to build or improve
+2. Ask clarifying questions (target user, constraints, scope)
+3. Break the work into small, implementable stories (5-15 min each)
+4. Each story needs: title, description, and specific acceptance criteria
+5. Stories should be ordered by dependency (build foundations first)
+
+Rules for good stories:
+- Each story should be independently committable
+- Last acceptance criterion should always be \"App builds successfully\" or equivalent
+- Acceptance criteria must be verifiable (not vague like \"looks good\")
+- Keep stories small — if it takes more than 15 min, split it
+- Include edge cases and error handling as separate stories
+- Don't forget: tests, error states, loading states, empty states
+
+When the user is happy with the plan, output the stories in this EXACT format — one JSON block with all stories:
+
+\`\`\`ralph-stories
+[
+  {
+    \"title\": \"Story title here\",
+    \"description\": \"What to implement and why\",
+    \"acceptanceCriteria\": [\"Criterion 1\", \"Criterion 2\", \"App builds successfully\"]
+  }
+]
+\`\`\`
+
+The user will say \"looks good\" or \"ship it\" when they want you to output the final stories.
+${existing}${project_context}"
+
+    if [ -n "$topic" ]; then
+        echo "🧠 Starting brainstorm on: $topic"
+        echo "   Type your ideas. Say 'ship it' when ready to generate stories."
+        echo ""
+        claude --system-prompt "$brainstorm_prompt" "Let's brainstorm: $topic"
+    else
+        echo "🧠 Starting brainstorm session..."
+        echo "   Describe what you want to build. Say 'ship it' when ready to generate stories."
+        echo ""
+        claude --system-prompt "$brainstorm_prompt"
+    fi
+
+    # After claude exits, check if stories were generated
+    # The user can pipe the output or copy-paste the ralph-stories block
+    echo ""
+    echo "💡 To add the stories, copy the JSON block from above and run:"
+    echo "   ralph import"
+}
+
+cmd_plan() {
+    topic="${1:-}"
+
+    if [ ! -f "$PRD_FILE" ]; then
+        echo "❌ ralph.json not found. Run 'ralph init' first."
+        exit 1
+    fi
+
+    if [ -z "$topic" ]; then
+        echo "Usage: ralph plan \"description of what to build\""
+        exit 1
+    fi
+
+    # Build context
+    existing=""
+    story_count=$(jq '.userStories | length' "$PRD_FILE")
+    if [ "$story_count" -gt 0 ]; then
+        existing="
+
+Existing stories (don't duplicate):
+$(jq -r '.userStories[] | "- [\(if .passes then "done" else "todo" end)] \(.title)"' "$PRD_FILE")"
+    fi
+
+    project_context=""
+    if [ -f "$PROMPT_FILE" ]; then
+        project_context="
+
+Project context:
+$(cat "$PROMPT_FILE")"
+    fi
+
+    echo "🧠 Planning stories for: $topic"
+    echo ""
+
+    set +e
+    result=$(claude -p "You are a senior product manager. Create implementation stories for the following work.
+
+Task: ${topic}
+${existing}${project_context}
+
+Output ONLY a JSON array of stories in this exact format, nothing else:
+
+\`\`\`ralph-stories
+[
+  {
+    \"title\": \"Short story title\",
+    \"description\": \"What to implement\",
+    \"acceptanceCriteria\": [\"Criterion 1\", \"Criterion 2\", \"App builds successfully\"]
+  }
+]
+\`\`\`
+
+Rules:
+- Each story: 5-15 min of work, independently committable
+- Order by dependency (foundations first)
+- Acceptance criteria must be objectively verifiable
+- Last criterion: build/test must pass
+- Include error handling, edge cases, loading states as separate stories
+- Be specific: name files, components, functions")
+    set -e
+
+    echo "$result"
+
+    # Try to auto-extract and import stories
+    stories_json=$(echo "$result" | sed -n '/```ralph-stories/,/```/p' | sed '1d;$d')
+
+    if [ -n "$stories_json" ]; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        count=$(echo "$stories_json" | jq 'length')
+        echo "Found ${count} stories. Add them to ralph.json? (y/n)"
+        read -r confirm
+        if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+            _import_stories "$stories_json"
+        else
+            echo "Skipped. You can run 'ralph import' later with the JSON."
+        fi
+    fi
+}
+
+cmd_import() {
+    if [ ! -f "$PRD_FILE" ]; then
+        echo "❌ ralph.json not found. Run 'ralph init' first."
+        exit 1
+    fi
+
+    # Read from stdin or file argument
+    if [ -n "$1" ] && [ -f "$1" ]; then
+        stories_json=$(cat "$1")
+    else
+        echo "Paste the ralph-stories JSON block (Ctrl+D when done):"
+        stories_json=$(cat)
+    fi
+
+    # Strip markdown fences if present
+    stories_json=$(echo "$stories_json" | sed '/^```/d')
+
+    _import_stories "$stories_json"
+}
+
+_import_stories() {
+    local stories_json="$1"
+
+    # Validate JSON
+    if ! echo "$stories_json" | jq empty 2>/dev/null; then
+        echo "❌ Invalid JSON. Please check the format."
+        return 1
+    fi
+
+    max_id=$(jq '[.userStories[].id] | max // 0' "$PRD_FILE")
+    count=$(echo "$stories_json" | jq 'length')
+
+    echo "$stories_json" | jq -c '.[]' | while IFS= read -r story; do
+        max_id=$((max_id + 1))
+        title=$(echo "$story" | jq -r '.title')
+        desc=$(echo "$story" | jq -r '.description')
+        criteria=$(echo "$story" | jq '.acceptanceCriteria')
+
+        jq --arg title "$title" \
+           --arg desc "$desc" \
+           --argjson id "$max_id" \
+           --argjson criteria "$criteria" \
+           '.userStories += [{
+             id: $id,
+             title: $title,
+             description: $desc,
+             acceptanceCriteria: $criteria,
+             priority: $id,
+             passes: false
+           }]' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
+
+        echo "  ✅ #${max_id}: ${title}"
+    done
+
+    echo ""
+    echo "Added ${count} stories to ralph.json."
+}
+
 # ── Main ───────────────────────────────────────────────
 
 case "${1:-run}" in
-    init)    cmd_init ;;
-    add)     shift; cmd_add "$@" ;;
-    status)  cmd_status ;;
-    reset)   shift; cmd_reset "$@" ;;
-    run|"")  cmd_run ;;
-    *)       echo "Usage: ralph [init|add|status|reset|run]"; exit 1 ;;
+    init)       cmd_init ;;
+    brainstorm) shift; cmd_brainstorm "$@" ;;
+    plan)       shift; cmd_plan "$@" ;;
+    import)     shift; cmd_import "$@" ;;
+    add)        shift; cmd_add "$@" ;;
+    status)     cmd_status ;;
+    reset)      shift; cmd_reset "$@" ;;
+    run|"")     cmd_run ;;
+    *)          echo "Usage: ralph [init|brainstorm|plan|import|add|status|reset|run]"; exit 1 ;;
 esac
