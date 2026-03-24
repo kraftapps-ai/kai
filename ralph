@@ -189,34 +189,71 @@ When the user is happy with the plan, output the stories in this EXACT format â€
 The user will say \"looks good\" or \"ship it\" when they want you to output the final stories.
 ${existing}${project_context}"
 
+    # Generate a session ID so we can find the transcript after
+    SESSION_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
+
     if [ -n "$topic" ]; then
         echo "Planning: $topic"
+        echo "Say 'ship it' when you're happy with the stories."
         echo ""
+        claude --session-id "$SESSION_ID" --system-prompt "$pm_prompt" "Let's plan: $topic"
     else
-        echo "Usage: ralph plan \"description of what to build\""
-        exit 1
+        echo "Describe what you want to build. Say 'ship it' when ready."
+        echo ""
+        claude --session-id "$SESSION_ID" --system-prompt "$pm_prompt"
     fi
 
-    set +e
-    result=$(claude -p --dangerously-skip-permissions "$pm_prompt
+    # After session ends, find the transcript and extract stories
+    echo ""
+    echo "Scanning session for stories..."
 
-The developer wants to build: $topic
+    # Find the project transcript directory
+    project_dir=$(echo "$PROJECT_DIR" | sed 's|/|-|g; s|^-||')
+    transcript=""
+    for dir in ~/.claude/projects/*/; do
+        if [ -f "${dir}${SESSION_ID}.jsonl" ]; then
+            transcript="${dir}${SESSION_ID}.jsonl"
+            break
+        fi
+    done
 
-Generate the stories now. Output ONLY the ralph-stories JSON block.")
-    set -e
-
-    # Extract stories JSON
-    stories_json=$(echo "$result" | sed -n '/```ralph-stories/,/```/p' | sed '1d;$d' 2>/dev/null)
-
-    if [ -z "$stories_json" ]; then
-        # Try without fences â€” maybe it output raw JSON
-        stories_json=$(echo "$result" | grep -Pzo '\[[\s\S]*\]' 2>/dev/null | head -1)
+    if [ -z "$transcript" ] || [ ! -f "$transcript" ]; then
+        echo "Could not find session transcript."
+        echo "If stories were generated, you can manually add them to ralph.json."
+        return
     fi
+
+    # Extract ralph-stories JSON from the transcript
+    stories_json=$(python3 -c "
+import json, re, sys
+
+stories = None
+with open('$transcript') as f:
+    for line in f:
+        try:
+            d = json.loads(line)
+            if d.get('type') == 'assistant':
+                content = d.get('message', {}).get('content', [])
+                if isinstance(content, list):
+                    for c in content:
+                        if c.get('type') == 'text':
+                            text = c['text']
+                            # Find ralph-stories block
+                            match = re.search(r'\`\`\`ralph-stories\s*\n(.*?)\n\`\`\`', text, re.DOTALL)
+                            if match:
+                                stories = match.group(1)
+        except: pass
+
+if stories:
+    # Validate it's valid JSON
+    parsed = json.loads(stories)
+    print(json.dumps(parsed))
+" 2>/dev/null)
 
     if [ -n "$stories_json" ] && echo "$stories_json" | jq empty 2>/dev/null; then
         count=$(echo "$stories_json" | jq 'length')
-        echo "Generated ${count} stories:"
         echo ""
+        echo "Found ${count} stories:"
         echo "$stories_json" | jq -r '.[] | "  - \(.title)"'
         echo ""
         echo "Add to ralph.json? (y/n)"
@@ -227,8 +264,8 @@ Generate the stories now. Output ONLY the ralph-stories JSON block.")
             echo "Skipped."
         fi
     else
-        echo "Failed to generate stories. Output:"
-        echo "$result" | tail -20
+        echo "No stories found in session."
+        echo "If the PM generated stories, you can copy the JSON and add manually to ralph.json."
     fi
 }
 
