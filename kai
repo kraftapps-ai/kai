@@ -15,19 +15,19 @@ if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
     exit 0
 fi
 
-# ── Handle --new flag ─────────────────────────────────
-
-USE_CONTINUE=true
-if [ "${1:-}" = "--new" ]; then
-    USE_CONTINUE=false
-    shift
-fi
-
 PRD_FILE=".kai/stories.json"
 PROGRESS_FILE=".kai/progress.txt"
 PROMPT_FILE=".kai/PROMPT.md"
 MEMORY_FILE=".kai/memory.md"
+SESSION_FILE=".kai/session_id"
 LOOP_SCRIPT=".kai/loop.sh"
+
+# ── Handle --new flag ─────────────────────────────────
+
+if [ "${1:-}" = "--new" ]; then
+    rm -f "$SESSION_FILE"
+    shift
+fi
 
 # ── Auto-init if needed ───────────────────────────────
 
@@ -376,9 +376,16 @@ The developer's name is: ${dev_name}"
 # ── Build Claude args ─────────────────────────────────
 
 CLAUDE_ARGS="--dangerously-skip-permissions"
-if [ "$USE_CONTINUE" = true ]; then
-    CLAUDE_ARGS="$CLAUDE_ARGS --continue"
+
+# Session persistence: reuse the same session ID per repo
+if [ -f "$SESSION_FILE" ]; then
+    KAI_SESSION=$(cat "$SESSION_FILE")
+else
+    KAI_SESSION=$(uuidgen 2>/dev/null || python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
+    mkdir -p .kai
+    echo "$KAI_SESSION" > "$SESSION_FILE"
 fi
+CLAUDE_ARGS="$CLAUDE_ARGS --session-id $KAI_SESSION --name kai"
 
 # ── Launch the PM ─────────────────────────────────────
 
