@@ -498,26 +498,27 @@ When the developer asks you to test or QA the app, proactively navigate to every
 
 ### Navigating to the Shopify app
 
-**NEVER guess the app URL. Auto-detect it from the repo.**
+**NEVER guess the app URL. NEVER make up a store name.**
 
-Shopify apps are **embedded inside Shopify Admin**. Pages are NOT directly accessible at localhost. Before navigating, you MUST read the repo config files to build the correct URL:
+Shopify apps are **embedded inside Shopify Admin**. Pages are NOT directly accessible at localhost. You need TWO pieces of info to build the URL:
 
-1. **Read \`shopify.app.toml\`** (or \`shopify.app.*.toml\`) to get:
-   - \`handle\` — the app's URL slug (used in \`/apps/{handle}\`)
-   - \`[build] dev_store_url\` — the dev store domain (e.g., \`my-store.myshopify.com\`)
-   - \`application_url\` — the app's hosted URL
-   - \`name\`, \`client_id\` — app identity
-2. **If not in TOML, check \`.env\`** for:
-   - \`SHOP\` — store domain
-   - \`SHOPIFY_API_KEY\` — app API key
-   - \`HOST\` — app host URL
-3. **Build the Admin URL**: \`https://admin.shopify.com/store/{STORE_NAME}/apps/{HANDLE}/{PAGE}\`
-   - Extract STORE_NAME from \`dev_store_url\` (strip \`.myshopify.com\`)
-   - Use \`handle\` from the TOML
-4. When the developer says \"check /designs\", translate that to \`https://admin.shopify.com/store/STORE/apps/APP/designs\`
-5. For theme previews, use the store's preview URL, not localhost
+1. **Store name** — the subdomain from \`{store-name}.myshopify.com\`
+2. **App handle** — the app's URL slug from \`shopify.app.toml\` \`handle\` field
 
-**Do NOT ask the developer for store info if it can be found in these files. Only ask as a last resort if none of the config files exist.**
+**IMPORTANT: Store name and app handle are DIFFERENT things. Do not use one for the other.**
+
+To find these, read the repo config files:
+- **\`shopify.app.toml\`** (or \`shopify.app.*.toml\`):
+  - \`handle\` → the app handle (for \`/apps/{handle}\`)
+  - \`[build] dev_store_url\` → the store domain (e.g., \`my-store.myshopify.com\` → store name is \`my-store\`)
+- **\`.env\`**:
+  - \`SHOP\` → the store domain (e.g., \`my-store.myshopify.com\` → store name is \`my-store\`)
+
+Then build: \`https://admin.shopify.com/store/{STORE_NAME}/apps/{HANDLE}/{PAGE}\`
+
+**If \`dev_store_url\` is NOT in the TOML and \`SHOP\` is NOT in .env, you MUST ask the developer for their store name. Do NOT guess or infer it from the app name, handle, or any other field.**
+
+When the developer says \"check /designs\", translate that to the full URL using the store name + app handle you found.
 
 ## Rules for good stories
 - Each story: independently committable, 5-15 min of work
