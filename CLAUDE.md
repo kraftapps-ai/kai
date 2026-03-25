@@ -7,16 +7,26 @@ Autonomous AI Shopify expert, product manager, and developer loop for Claude Cod
 - `kai` — the entire tool; a single bash script that bootstraps the PM agent and dev loop
 - `package.json` — npm metadata and version
 - `.kai/PROMPT.md` — per-project context (generated at runtime, not in repo)
+- `.kai/memory.md` — persistent memory across sessions (generated at runtime, not in repo)
 - `.kai/loop.sh` — dev loop script (generated at runtime, not in repo)
 
 ## How it works
 
-1. `kai` script auto-inits project files (`kai.json`, `kai-progress.txt`, `.kai/PROMPT.md`)
+1. `kai` script auto-inits project files (`kai.json`, `kai-progress.txt`, `.kai/PROMPT.md`, `.kai/memory.md`)
 2. Auto-installs MCP servers if not already configured:
    - **Playwright** — browser testing inside Shopify Admin
    - **@shopify/dev-mcp** — Shopify docs, GraphQL schema introspection, Liquid/GraphQL/component validation
 3. Generates `.kai/loop.sh` (the autonomous dev loop)
-4. Launches Claude as a Shopify-expert PM agent
+4. Launches Claude with `--continue` to resume the last conversation (per-repo)
+5. Falls back to `.kai/memory.md` for context if conversation history is unavailable
+
+## Session persistence
+
+Kai uses a two-layer persistence strategy:
+- **`claude --continue`** — resumes the exact last conversation in this directory (primary)
+- **`.kai/memory.md`** — Kai-maintained memory file with key decisions, current focus, and session log (fallback)
+
+Use `kai --new` to force a fresh conversation (memory.md is still loaded for context).
 
 The PM creates user stories in `kai.json`, then kicks off `.kai/loop.sh` which runs Claude in a loop — one story per iteration with self-review. Both the PM and the dev loop worker use Shopify Dev MCP tools to introspect APIs, search docs, and validate code.
 

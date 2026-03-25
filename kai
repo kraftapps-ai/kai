@@ -15,9 +15,18 @@ if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
     exit 0
 fi
 
+# ── Handle --new flag ─────────────────────────────────
+
+USE_CONTINUE=true
+if [ "${1:-}" = "--new" ]; then
+    USE_CONTINUE=false
+    shift
+fi
+
 PRD_FILE="kai.json"
 PROGRESS_FILE="kai-progress.txt"
 PROMPT_FILE=".kai/PROMPT.md"
+MEMORY_FILE=".kai/memory.md"
 LOOP_SCRIPT=".kai/loop.sh"
 
 # ── Auto-init if needed ───────────────────────────────
@@ -62,6 +71,29 @@ Add your project-specific context here. The more you provide, the better Kai per
 
 ## Conventions
 <!-- Coding style, naming, patterns -->
+EOF
+fi
+
+# Init memory file if it doesn't exist
+if [ ! -f "$MEMORY_FILE" ]; then
+    mkdir -p .kai
+    cat > "$MEMORY_FILE" << 'EOF'
+# Kai Memory
+
+This file is automatically maintained by Kai to preserve context between sessions.
+Do not edit manually unless you want to correct or add context for Kai.
+
+## Current Focus
+<!-- What we're currently working on -->
+
+## Key Decisions
+<!-- Important decisions made during our conversations -->
+
+## Open Questions / Blockers
+<!-- Things that need to be resolved -->
+
+## Session Log
+<!-- Brief log of what happened in each session -->
 EOF
 fi
 
@@ -318,9 +350,49 @@ progress=""
 Recent progress (kai-progress.txt):
 $(tail -30 "$PROGRESS_FILE")"
 
+memory=""
+[ -f "$MEMORY_FILE" ] && memory="
+
+## Kai Memory (from previous sessions)
+Read \`.kai/memory.md\` for full details. Summary:
+$(cat "$MEMORY_FILE")"
+
+# ── Build Claude args ─────────────────────────────────
+
+CLAUDE_ARGS="--dangerously-skip-permissions"
+if [ "$USE_CONTINUE" = true ]; then
+    CLAUDE_ARGS="$CLAUDE_ARGS --continue"
+fi
+
 # ── Launch the PM ─────────────────────────────────────
 
-exec claude --dangerously-skip-permissions --system-prompt "You are Kai — an AI product manager, tech lead, and **Shopify expert**. You work directly with the developer to plan and ship Shopify apps, themes, and integrations.
+exec claude $CLAUDE_ARGS --system-prompt "You are Kai — an AI product manager, tech lead, and **Shopify expert**. You work directly with the developer to plan and ship Shopify apps, themes, and integrations.
+
+## Session persistence
+
+You maintain a memory file at \`.kai/memory.md\` that preserves context between sessions. This is critical — it's how you remember what happened in previous conversations.
+
+### Reading memory
+- On startup, ALWAYS read \`.kai/memory.md\` to restore context from previous sessions
+- Use this to greet the developer with awareness of where you left off
+- If memory exists, reference it naturally: \"Welcome back — last time we were working on X\"
+
+### Writing memory
+You MUST update \`.kai/memory.md\` in these situations:
+- **After creating or modifying stories** — record what was planned and why
+- **After the dev loop completes** — record what was built and any issues
+- **When the developer makes a key decision** — record the decision and reasoning
+- **When there are open questions or blockers** — record them so you remember next time
+- **Before the developer leaves** — if they say \"bye\", \"done for today\", \"gotta go\", etc., immediately update memory with a session summary
+
+### Memory format
+Keep \`.kai/memory.md\` organized with these sections:
+- **Current Focus** — what we're actively working on
+- **Key Decisions** — important choices and their reasoning
+- **Open Questions / Blockers** — unresolved issues
+- **Session Log** — brief dated entries of what happened (newest first, keep last 10)
+
+Keep entries concise. Memory is context, not a novel.
 
 ## Your Shopify expertise
 
@@ -432,5 +504,5 @@ Shopify apps are **embedded inside Shopify Admin**. Pages are NOT directly acces
 - When the developer says \"ship it\" or \"go\" or \"do it\", start the loop
 - Don't ask unnecessary questions — use good defaults
 - When unsure about an API, introspect the schema instead of guessing
-- On startup, greet the developer briefly. If there are existing stories, give a quick status. If not, ask what they want to build. Keep it to 2-3 lines max.
-${status}${project_context}${progress}" "${@:-Hey Kai}"
+- On startup: read \`.kai/memory.md\` first. If it has context, greet with awareness of previous work. If fresh, greet briefly and ask what to build. Keep it to 2-3 lines max.
+${status}${project_context}${progress}${memory}" "${@:-Hey Kai}"
