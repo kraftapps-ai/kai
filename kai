@@ -121,6 +121,7 @@ fi
 # Track what's already configured
 playwright_available=false
 shopify_dev_available=false
+mantle_available=false
 
 for config in \
     ".mcp.json" \
@@ -130,6 +131,7 @@ for config in \
     if [ -f "$config" ]; then
         grep -q "playwright" "$config" 2>/dev/null && playwright_available=true
         grep -q "shopify-dev" "$config" 2>/dev/null && shopify_dev_available=true
+        grep -q "mantle" "$config" 2>/dev/null && mantle_available=true
     fi
 done
 
@@ -145,7 +147,7 @@ fi
 
 # Build MCP config with all needed servers
 needs_mcp_update=false
-if [ "$playwright_available" = false ] || [ "$shopify_dev_available" = false ]; then
+if [ "$playwright_available" = false ] || [ "$shopify_dev_available" = false ] || [ "$mantle_available" = false ]; then
     needs_mcp_update=true
 fi
 
@@ -164,11 +166,18 @@ if [ "$needs_mcp_update" = true ]; then
             mcp_config=$(echo "$mcp_config" | jq '.mcpServers["shopify-dev-mcp"] = {"command": "npx", "args": ["-y", "@shopify/dev-mcp@latest"]}')
         fi
 
+        if [ "$mantle_available" = false ] && ! echo "$mcp_config" | grep -q "mantle"; then
+            echo "Setting up Mantle MCP (billing, subscriptions, analytics)..."
+            mcp_config=$(echo "$mcp_config" | jq '.mcpServers["mantle-foundations"] = {"url": "https://mcp.heymantle.com/foundations"}')
+            mcp_config=$(echo "$mcp_config" | jq '.mcpServers["mantle-core"] = {"url": "https://mcp.heymantle.com/core"}')
+        fi
+
         echo "$mcp_config" > .mcp.json
     else
         echo "Setting up MCP servers..."
         echo "  - Playwright (browser testing)"
         echo "  - Shopify Dev MCP (docs, GraphQL schemas, Liquid validation)"
+        echo "  - Mantle MCP (billing, subscriptions, analytics)"
 
         cat > .mcp.json << 'MCPEOF'
 {
@@ -180,6 +189,12 @@ if [ "$needs_mcp_update" = true ]; then
     "shopify-dev-mcp": {
       "command": "npx",
       "args": ["-y", "@shopify/dev-mcp@latest"]
+    },
+    "mantle-foundations": {
+      "url": "https://mcp.heymantle.com/foundations"
+    },
+    "mantle-core": {
+      "url": "https://mcp.heymantle.com/core"
     }
   }
 }
@@ -454,6 +469,14 @@ Every Shopify store exposes a Storefront MCP endpoint at \`https://{shop}.myshop
 
 If the developer's store domain is in \`.kai/PROMPT.md\`, you can point them to this endpoint for storefront integrations.
 
+### Mantle MCP (billing & analytics)
+You have access to Mantle MCP servers for Shopify app billing and analytics:
+
+- **mantle-foundations** — Code generation for Mantle integration: billing UI, customer identification, usage event tracking, feature gating, plan/feature/entitlement configuration. Use this when implementing or modifying billing, subscriptions, or paywalls.
+- **mantle-core** — Customer analytics, subscription details, revenue metrics (50+ metrics including churn, retention, MRR), sales CRM, transaction history. Use this to look up customer data, analyze revenue, or check subscription status.
+
+OAuth authentication happens automatically via browser on first use — no API keys needed.
+
 ### Your Shopify knowledge includes
 - **App development**: Remix apps, App Bridge, session tokens, OAuth, webhooks, GDPR compliance, app extensions
 - **Admin API**: GraphQL (preferred) and REST, pagination, rate limits, bulk operations, metafields, metaobjects
@@ -463,6 +486,7 @@ If the developer's store domain is in \`.kai/PROMPT.md\`, you can point them to 
 - **Polaris**: Shopify's design system and React components for app UIs
 - **App extensions**: Theme app extensions, checkout UI extensions, admin UI extensions, Shopify Functions
 - **Hydrogen & Oxygen**: Shopify's headless framework and hosting
+- **Mantle**: App billing, subscriptions, usage-based pricing, feature gating, customer analytics via Mantle MCP
 
 ## What you can do
 
