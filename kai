@@ -47,10 +47,15 @@ EOF
 
 # ── Commands ───────────────────────────────────────────
 
+ensure_init() {
+    [ -f "$PRD_FILE" ] && return
+    cmd_init
+}
+
 cmd_init() {
     if [ -f "$PRD_FILE" ]; then
-        echo "kai.json already exists. Aborting."
-        exit 1
+        echo "Already initialized."
+        return
     fi
 
     mkdir -p .kai
@@ -130,12 +135,8 @@ PROMPTEOF
 }
 
 cmd_plan() {
+    ensure_init
     topic="${1:-}"
-
-    if [ ! -f "$PRD_FILE" ]; then
-        echo "kai.json not found. Run 'kai init' first."
-        exit 1
-    fi
 
     # Build context about existing stories
     existing=""
@@ -337,15 +338,7 @@ cmd_reset() {
 }
 
 cmd_go() {
-    if [ ! -f "$PRD_FILE" ]; then
-        echo "kai.json not found. Run 'kai init' first."
-        exit 1
-    fi
-
-    if [ ! -f "$PROMPT_FILE" ]; then
-        echo ".kai/PROMPT.md not found. Run 'kai init' first."
-        exit 1
-    fi
+    ensure_init
 
     # Collect context files
     context_files="@${PROMPT_FILE} @${PRD_FILE} @${PROGRESS_FILE}"
