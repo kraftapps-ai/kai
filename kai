@@ -6,6 +6,15 @@
 
 set -e
 
+# ── Version ───────────────────────────────────────────
+
+KAI_VERSION=$(node -p "require('$(dirname "$(readlink -f "$(which kai)" 2>/dev/null || echo "$0")")/package.json').version" 2>/dev/null || echo "unknown")
+
+if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
+    echo "kai v${KAI_VERSION}"
+    exit 0
+fi
+
 PRD_FILE="kai.json"
 PROGRESS_FILE="kai-progress.txt"
 PROMPT_FILE=".kai/PROMPT.md"
@@ -31,10 +40,10 @@ EOF
 Add your project-specific context here. The more you provide, the better Kai performs.
 
 ## Shopify Store
-<!-- Required for browser testing and Storefront MCP -->
+<!-- Kai auto-detects store info from shopify.app.toml and .env -->
+<!-- Only fill this in if auto-detection doesn't work for your setup -->
 <!-- Store domain: your-store.myshopify.com -->
-<!-- App handle: your-app-handle (from the app URL in Shopify Admin) -->
-<!-- App URL: https://admin.shopify.com/store/YOUR_STORE/apps/YOUR_APP -->
+<!-- App handle: your-app-handle -->
 
 ## Tech stack
 <!-- e.g., Remix + TypeScript, Next.js, Ruby on Rails -->
@@ -387,15 +396,26 @@ When the developer asks you to test or QA the app, proactively navigate to every
 
 ### Navigating to the Shopify app
 
-**NEVER guess the app URL.** Before navigating, read \`.kai/PROMPT.md\` for the store domain and app handle.
+**NEVER guess the app URL. Auto-detect it from the repo.**
 
-Shopify apps are **embedded inside Shopify Admin**. Pages are NOT directly accessible at localhost. You must:
-1. Build the full Admin URL: \`https://admin.shopify.com/store/STORE_NAME/apps/APP_HANDLE/PAGE\`
-2. Use the **store domain and app handle** from \`.kai/PROMPT.md\`
-3. When the developer says \"check /designs\", translate that to \`https://admin.shopify.com/store/STORE/apps/APP/designs\`
-4. For theme previews, use the store's preview URL, not localhost
+Shopify apps are **embedded inside Shopify Admin**. Pages are NOT directly accessible at localhost. Before navigating, you MUST read the repo config files to build the correct URL:
 
-If no store info is configured in \`.kai/PROMPT.md\`, ask the developer for it before navigating.
+1. **Read \`shopify.app.toml\`** (or \`shopify.app.*.toml\`) to get:
+   - \`handle\` — the app's URL slug (used in \`/apps/{handle}\`)
+   - \`[build] dev_store_url\` — the dev store domain (e.g., \`my-store.myshopify.com\`)
+   - \`application_url\` — the app's hosted URL
+   - \`name\`, \`client_id\` — app identity
+2. **If not in TOML, check \`.env\`** for:
+   - \`SHOP\` — store domain
+   - \`SHOPIFY_API_KEY\` — app API key
+   - \`HOST\` — app host URL
+3. **Build the Admin URL**: \`https://admin.shopify.com/store/{STORE_NAME}/apps/{HANDLE}/{PAGE}\`
+   - Extract STORE_NAME from \`dev_store_url\` (strip \`.myshopify.com\`)
+   - Use \`handle\` from the TOML
+4. When the developer says \"check /designs\", translate that to \`https://admin.shopify.com/store/STORE/apps/APP/designs\`
+5. For theme previews, use the store's preview URL, not localhost
+
+**Do NOT ask the developer for store info if it can be found in these files. Only ask as a last resort if none of the config files exist.**
 
 ## Rules for good stories
 - Each story: independently committable, 5-15 min of work
