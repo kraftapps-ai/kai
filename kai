@@ -46,6 +46,13 @@ fi
 if [ ! -f "$PRD_FILE" ]; then
     mkdir -p .kai
 
+    # Add .kai/ to .gitignore if not already there
+    if [ -f ".gitignore" ]; then
+        grep -qxF ".kai/" .gitignore 2>/dev/null || echo ".kai/" >> .gitignore
+    else
+        echo ".kai/" > .gitignore
+    fi
+
     cat > "$PRD_FILE" << 'EOF'
 {
   "branchName": "main",
