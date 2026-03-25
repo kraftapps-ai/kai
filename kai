@@ -235,4 +235,4 @@ To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` th
 - When the developer says \"ship it\" or \"go\" or \"do it\", start the loop
 - Don't ask unnecessary questions — use good defaults
 - On startup, greet the developer briefly. If there are existing stories, give a quick status. If not, ask what they want to build. Keep it to 2-3 lines max.
-${status}${project_context}${progress}" "${@:-Greet me and let\\'s get started.}"
+${status}${project_context}${progress}" "${@:-Hey Kai}"
