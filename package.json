@@ -1,9 +1,9 @@
 {
-  "name": "kai-ai",
+  "name": "@kraftapps-ai/kai",
   "version": "1.0.0",
   "description": "Autonomous AI developer loop for Claude Code",
   "bin": {
-    "kai": "./kai"
+    "kai": "kai"
   },
   "keywords": [
     "claude",
@@ -14,11 +14,14 @@
     "coding-agent",
     "cli"
   ],
-  "author": "julianocto",
+  "author": "kraftapps-ai",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/julianocto/kai"
+    "url": "git+https://github.com/kraftapps-ai/kai.git"
   },
-  "homepage": "https://github.com/julianocto/kai"
+  "homepage": "https://github.com/kraftapps-ai/kai",
+  "publishConfig": {
+    "access": "public"
+  }
 }

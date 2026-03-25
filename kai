@@ -1,6 +1,6 @@
 #!/bin/bash
 # Kai — Autonomous AI developer loop for Claude Code
-# https://github.com/julianocto/kai
+# https://github.com/kraftapps-ai/kai
 #
 # Usage:
 #   kai              — Show help
@@ -41,7 +41,7 @@ Workflow:
 
 Requirements: claude (Claude Code CLI), jq, git
 
-https://github.com/julianocto/kai
+https://github.com/kraftapps-ai/kai
 EOF
 }
 

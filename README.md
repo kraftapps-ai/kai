@@ -30,13 +30,15 @@ Each iteration starts fresh — no context pollution between stories.
 ## Install
 
 ```bash
-# Clone and symlink
-git clone https://github.com/julianocto/kai.git
-ln -s $(pwd)/kai/kai /usr/local/bin/kai
+npm i -g @kraftapps-ai/kai
+```
 
-# Or just copy the script
-curl -o /usr/local/bin/kai https://raw.githubusercontent.com/julianocto/kai/main/kai
-chmod +x /usr/local/bin/kai
+Or without installing:
+
+```bash
+npx @kraftapps-ai/kai init
+npx @kraftapps-ai/kai plan "add auth"
+npx @kraftapps-ai/kai go
 ```
 
 **Requirements:** `claude` CLI ([Claude Code](https://claude.ai/claude-code)), `jq`, `git`
