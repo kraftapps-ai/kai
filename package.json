@@ -1,6 +1,6 @@
 {
   "name": "@kraftapps-ai/kai",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "Autonomous AI developer loop for Claude Code",
   "bin": {
     "kai": "kai"

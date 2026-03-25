@@ -130,8 +130,8 @@ if [ "$needs_mcp_update" = true ]; then
 
         if [ "$mantle_available" = false ] && ! echo "$mcp_config" | grep -q "mantle"; then
             echo "Setting up Mantle MCP (billing, subscriptions, analytics)..."
-            mcp_config=$(echo "$mcp_config" | jq '.mcpServers["mantle-foundations"] = {"url": "https://mcp.heymantle.com/foundations"}')
-            mcp_config=$(echo "$mcp_config" | jq '.mcpServers["mantle-core"] = {"url": "https://mcp.heymantle.com/core"}')
+            mcp_config=$(echo "$mcp_config" | jq '.mcpServers["mantle-foundations"] = {"type": "http", "url": "https://mcp.heymantle.com/foundations"}')
+            mcp_config=$(echo "$mcp_config" | jq '.mcpServers["mantle-core"] = {"type": "http", "url": "https://mcp.heymantle.com/core"}')
         fi
 
         echo "$mcp_config" > .mcp.json
@@ -153,9 +153,11 @@ if [ "$needs_mcp_update" = true ]; then
       "args": ["-y", "@shopify/dev-mcp@latest"]
     },
     "mantle-foundations": {
+      "type": "http",
       "url": "https://mcp.heymantle.com/foundations"
     },
     "mantle-core": {
+      "type": "http",
       "url": "https://mcp.heymantle.com/core"
     }
   }
