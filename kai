@@ -29,6 +29,13 @@ if [ "${1:-}" = "--new" ]; then
     shift
 fi
 
+# ── Ensure .kai/ is git-ignored ───────────────────────
+
+mkdir -p .kai
+if [ ! -f ".kai/.gitignore" ]; then
+    echo "*" > .kai/.gitignore
+fi
+
 # ── Auto-init if needed ───────────────────────────────
 
 # Migrate old file locations (pre-1.5.0)
@@ -45,13 +52,6 @@ fi
 
 if [ ! -f "$PRD_FILE" ]; then
     mkdir -p .kai
-
-    # Add .kai/ to .gitignore if not already there
-    if [ -f ".gitignore" ]; then
-        grep -qxF ".kai/" .gitignore 2>/dev/null || echo ".kai/" >> .gitignore
-    else
-        echo ".kai/" > .gitignore
-    fi
 
     cat > "$PRD_FILE" << 'EOF'
 {
