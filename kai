@@ -1,488 +1,237 @@
 #!/bin/bash
-# Kai — Autonomous AI developer loop for Claude Code
+# Kai — Your AI product manager and development team
 # https://github.com/kraftapps-ai/kai
 #
-# Usage:
-#   kai              — Show help
-#   kai init         — Initialize kai in current project
-#   kai plan [topic] — Interactive brainstorm with AI PM, generates stories
-#   kai import       — Import stories from JSON
-#   kai go           — Run the implement + review loop
-#   kai status       — Show remaining stories
-#   kai reset <id>   — Reset a story to incomplete
+# Just run: kai
 
 set -e
 
-KAI_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(pwd)"
 PRD_FILE="kai.json"
 PROGRESS_FILE="kai-progress.txt"
 PROMPT_FILE=".kai/PROMPT.md"
+LOOP_SCRIPT=".kai/loop.sh"
 
-# ── Help ───────────────────────────────────────────────
+# ── Auto-init if needed ───────────────────────────────
 
-cmd_help() {
-    cat << 'EOF'
-Kai — Autonomous AI developer loop for Claude Code
-
-Commands:
-  kai init             Initialize kai in the current project
-  kai plan "topic"     AI generates stories from your description
-  kai go               Run the implement + review loop
-  kai status           Show progress and remaining stories
-  kai reset <id>       Reset a story to incomplete
-  kai help             Show this help
-
-Workflow:
-  1. kai init                       # setup
-  2. vim .kai/PROMPT.md             # add project context
-  3. kai plan "add user auth"       # AI generates stories
-  4. kai go                         # AI implements everything
-
-Requirements: claude (Claude Code CLI), jq, git
-
-https://github.com/kraftapps-ai/kai
-EOF
-}
-
-# ── Commands ───────────────────────────────────────────
-
-ensure_init() {
-    [ -f "$PRD_FILE" ] && return
-    cmd_init
-}
-
-cmd_init() {
-    if [ -f "$PRD_FILE" ]; then
-        echo "Already initialized."
-        return
-    fi
-
+if [ ! -f "$PRD_FILE" ]; then
     mkdir -p .kai
 
-    cat > "$PRD_FILE" << 'JSONEOF'
+    cat > "$PRD_FILE" << 'EOF'
 {
   "branchName": "main",
   "userStories": []
 }
-JSONEOF
+EOF
 
     echo "# Kai Progress Log" > "$PROGRESS_FILE"
-    echo "" >> "$PROGRESS_FILE"
 
-    cat > "$PROMPT_FILE" << 'PROMPTEOF'
-You are an autonomous AI developer.
+    cat > "$PROMPT_FILE" << 'EOF'
+# Project Context
+
+Add your project-specific context here. The more you provide, the better Kai performs.
+
+## Tech stack
+<!-- e.g., React + TypeScript, Laravel, Python Flask -->
+
+## Build command
+<!-- e.g., npm run build, cargo build, go build -->
+
+## Test command
+<!-- e.g., npm test, pytest, go test ./... -->
+
+## Project structure
+<!-- Key directories and files -->
+
+## Conventions
+<!-- Coding style, naming, patterns -->
+EOF
+fi
+
+# ── Create the implementation loop script ─────────────
+
+cat > "$LOOP_SCRIPT" << 'LOOPEOF'
+#!/bin/bash
+# Kai implementation loop — called by the PM when stories are ready
+set -e
+
+PRD_FILE="kai.json"
+PROGRESS_FILE="kai-progress.txt"
+PROMPT_FILE=".kai/PROMPT.md"
+
+WORKER_PROMPT='You are an autonomous AI developer.
 
 ## Your inputs
 - `@kai.json` — user stories with `passes: true/false`.
-- `@kai-progress.txt` — append-only log of what's been done.
+- `@kai-progress.txt` — log of what has been done.
 
 ## Your task (ONE story per loop)
 
-1. Read kai.json and find the highest-priority story where `passes: false`.
-2. Read kai-progress.txt to understand what's already been done.
-3. **PLAN before coding.** List the files you'll change and what you'll do in each.
+1. Read kai.json, find the highest-priority story where `passes: false`.
+2. Read kai-progress.txt for context on previous work.
+3. **PLAN before coding.** List files and changes before touching code.
 4. Implement ONLY that one story.
-5. Run verification (build, tests, lint — whatever applies).
-6. **SELF-REVIEW.** For each acceptance criterion, state what you did and cite evidence (file, line, command output). Do NOT use "should work", "probably", or "seems to".
-7. If all criteria pass, commit with a descriptive message.
+5. Run verification (build, tests, lint).
+6. **SELF-REVIEW.** For each acceptance criterion, cite evidence (file, line, command output). No "should work" or "probably".
+7. Commit with a descriptive message.
 8. Update kai.json: set `passes` to `true`.
-9. Append to kai-progress.txt: what you did, what you learned.
-
-## Verification Protocol
-
-- Run the project's build/test command and read the output.
-- You cannot claim a criterion is met without evidence.
-- "I added the component" is NOT evidence. "I added FooComponent at src/Foo.tsx:45 and the build passes" IS evidence.
+9. Append to kai-progress.txt.
 
 ## Rules
-
-- ONE STORY PER LOOP. Do not work on multiple stories.
-- Search the codebase before assuming anything.
-- No placeholder implementations. Fully implement or report BLOCKED.
+- ONE STORY PER LOOP.
+- No placeholders. Fully implement or report BLOCKED.
 - Do not break existing functionality.
-- Keep commits atomic — one commit per story.
 - If ALL stories have `passes: true`, output: <promise>COMPLETE</promise>
 
 ## Rationalization Blockers
-
-| Your thought | Why it's wrong | Do this instead |
+| Thought | Reality | Action |
 |---|---|---|
-| "This story is already implemented" | You haven't verified. | Read every criterion, find the code, run the build. |
-| "I'll just mark it complete" | A commit with only kai.json changes is wrong. | Every story needs real code changes. |
-| "The build passes so it works" | Build ≠ correct behavior. | Verify each criterion independently. |
-| "I'll fix other issues I noticed" | Scope creep introduces bugs. | Only implement the current story. |
-| "This is close enough" | Partial = broken for the user. | Implement ALL criteria or report BLOCKED. |
-| "I'll skip the review, it's simple" | Simple code has bugs too. | Always self-review against criteria. |
-| "I need to refactor first" | Refactoring without a story = scope creep. | Only refactor if the story requires it. |
+| "Already implemented" | You have not verified. | Read code, run build. |
+| "Just mark complete" | No code changes = not done. | Implement it. |
+| "Build passes = works" | Build ≠ correct. | Check each criterion. |
+| "Close enough" | Partial = broken. | All criteria or BLOCKED. |
+| "Skip review" | Simple code has bugs. | Always self-review. |'
 
-## Status Reporting
+context_files="@${PROMPT_FILE} @${PRD_FILE} @${PROGRESS_FILE}"
+if [ -f ".kai/context.txt" ]; then
+    while IFS= read -r file; do
+        [ -n "$file" ] && [ -f "$file" ] && context_files="$context_files @${file}"
+    done < .kai/context.txt
+fi
 
-- **DONE** — All criteria met, build passes, committed.
-- **DONE_WITH_CONCERNS** — Completed but something feels off. Document in `concerns` field.
-- **BLOCKED** — Cannot complete. Document why in kai-progress.txt.
-- **NEEDS_CONTEXT** — Missing information. Document in kai-progress.txt.
-PROMPTEOF
+iteration=0
+review_failures=0
 
-    echo "Kai initialized."
-    echo ""
-    echo "  Created: kai.json, kai-progress.txt, .kai/PROMPT.md"
-    echo ""
-    echo "Next:"
-    echo "  1. Edit .kai/PROMPT.md with your project context"
-    echo "  2. kai plan \"what you want to build\""
-    echo "  3. kai go"
-}
+while :; do
+    iteration=$((iteration + 1))
+    REMAINING=$(jq '[.userStories[] | select(.passes == false)] | length' "$PRD_FILE")
 
-cmd_plan() {
-    ensure_init
-    topic="${1:-}"
-
-    # Build context about existing stories
-    existing=""
-    story_count=$(jq '.userStories | length' "$PRD_FILE")
-    if [ "$story_count" -gt 0 ]; then
-        existing="
-
-Existing stories in kai.json (don't duplicate these):
-$(jq -r '.userStories[] | "- [\(if .passes then "done" else "todo" end)] \(.title)"' "$PRD_FILE")"
+    if [ "$REMAINING" -eq 0 ]; then
+        echo "All stories complete!"
+        break
     fi
 
-    # Build context about the project
-    project_context=""
-    if [ -f "$PROMPT_FILE" ]; then
-        project_context="
+    NEXT_ID=$(jq -r '[.userStories[] | select(.passes == false)] | sort_by(.priority) | .[0].id' "$PRD_FILE")
+    NEXT=$(jq -r '[.userStories[] | select(.passes == false)] | sort_by(.priority) | .[0].title' "$PRD_FILE")
 
-Project context from .kai/PROMPT.md:
-$(cat "$PROMPT_FILE")"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "#${iteration} — $(date)"
+    echo "  Remaining: $REMAINING | Next: $NEXT"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    start_time=$(date +%s)
+
+    set +e
+    result=$(claude -p --dangerously-skip-permissions $context_files)
+    exit_code=$?
+    set -e
+
+    elapsed=$(( $(date +%s) - start_time ))
+    echo "$result" | tail -20
+
+    if [ $exit_code -ne 0 ]; then
+        echo "Failed (code ${exit_code}). Restarting..."
+        continue
     fi
 
-    # PM system prompt
-    pm_prompt="You are a senior product manager and technical architect. You're planning work with a developer.
-
-Your job:
-1. Understand what they want to build or improve
-2. Ask clarifying questions (target user, constraints, scope)
-3. Break the work into small, implementable stories (5-15 min each)
-4. Each story needs: title, description, and specific acceptance criteria
-5. Stories should be ordered by dependency (build foundations first)
-
-Rules for good stories:
-- Each story should be independently committable
-- Last acceptance criterion should always be \"App builds successfully\" or equivalent
-- Acceptance criteria must be verifiable (not vague like \"looks good\")
-- Keep stories small — if it takes more than 15 min, split it
-- Include edge cases and error handling as separate stories
-- Don't forget: tests, error states, loading states, empty states
-
-When the user is happy with the plan, output the stories in this EXACT format — one JSON block with all stories:
-
-\`\`\`kai-stories
-[
-  {
-    \"title\": \"Story title here\",
-    \"description\": \"What to implement and why\",
-    \"acceptanceCriteria\": [\"Criterion 1\", \"Criterion 2\", \"App builds successfully\"]
-  }
-]
-\`\`\`
-
-The user will say \"looks good\" or \"ship it\" when they want you to output the final stories.
-${existing}${project_context}"
-
-    # Generate a session ID so we can find the transcript after
-    SESSION_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
-
-    if [ -n "$topic" ]; then
-        echo "Planning: $topic"
-        echo "Say 'ship it' when you're happy with the stories."
-        echo ""
-        claude --session-id "$SESSION_ID" --system-prompt "$pm_prompt" "Let's plan: $topic"
-    else
-        echo "Describe what you want to build. Say 'ship it' when ready."
-        echo ""
-        claude --session-id "$SESSION_ID" --system-prompt "$pm_prompt"
+    if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
+        echo "All stories complete after $iteration iterations!"
+        exit 0
     fi
 
-    # After session ends, find the transcript and extract stories
-    echo ""
-    echo "Scanning session for stories..."
+    # Review
+    STORY_PASSES=$(jq -r ".userStories[] | select(.id == $NEXT_ID) | .passes" "$PRD_FILE")
+    if [ "$STORY_PASSES" = "true" ]; then
+        last_commit=$(git log --oneline -1 2>/dev/null || echo "no git")
+        ACCEPTANCE=$(jq -r ".userStories[] | select(.id == $NEXT_ID) | .acceptanceCriteria | join(\"\n- \")" "$PRD_FILE")
 
-    # Find the project transcript directory
-    project_dir=$(echo "$PROJECT_DIR" | sed 's|/|-|g; s|^-||')
-    transcript=""
-    for dir in ~/.claude/projects/*/; do
-        if [ -f "${dir}${SESSION_ID}.jsonl" ]; then
-            transcript="${dir}${SESSION_ID}.jsonl"
-            break
-        fi
-    done
+        set +e
+        review=$(claude -p --dangerously-skip-permissions \
+          "You are a code reviewer. Story #${NEXT_ID} ('${NEXT}') claims complete.
+Last commit: ${last_commit}
+Acceptance criteria:
+- ${ACCEPTANCE}
+Read git diff HEAD~1 HEAD. Verify EACH criterion. Be skeptical.
+If ANY fails: REVIEW_FAIL: [reason]
+If all pass: REVIEW_PASS")
+        set -e
 
-    if [ -z "$transcript" ] || [ ! -f "$transcript" ]; then
-        echo "Could not find session transcript."
-        echo "If stories were generated, you can manually add them to kai.json."
-        return
-    fi
+        echo "$review" | tail -5
 
-    # Extract kai-stories JSON from the transcript
-    stories_json=$(python3 -c "
-import json, re, sys
-
-stories = None
-with open('$transcript') as f:
-    for line in f:
-        try:
-            d = json.loads(line)
-            if d.get('type') == 'assistant':
-                content = d.get('message', {}).get('content', [])
-                if isinstance(content, list):
-                    for c in content:
-                        if c.get('type') == 'text':
-                            text = c['text']
-                            # Find kai-stories block
-                            match = re.search(r'\`\`\`kai-stories\s*\n(.*?)\n\`\`\`', text, re.DOTALL)
-                            if match:
-                                stories = match.group(1)
-        except: pass
-
-if stories:
-    # Validate it's valid JSON
-    parsed = json.loads(stories)
-    print(json.dumps(parsed))
-" 2>/dev/null)
-
-    if [ -n "$stories_json" ] && echo "$stories_json" | jq empty 2>/dev/null; then
-        count=$(echo "$stories_json" | jq 'length')
-        echo ""
-        echo "Found ${count} stories:"
-        echo "$stories_json" | jq -r '.[] | "  - \(.title)"'
-        echo ""
-        echo "Add to kai.json? (y/n)"
-        read -r confirm
-        if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || [ "$confirm" = "" ]; then
-            _import_stories "$stories_json"
+        if [[ "$review" == *"REVIEW_FAIL"* ]]; then
+            jq --argjson id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
+            echo "REVIEW FEEDBACK: $review" >> "$PROGRESS_FILE"
+            review_failures=$((review_failures + 1))
+            [ $review_failures -ge 3 ] && {
+                jq --argjson id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = true' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
+                review_failures=0
+            }
         else
-            echo "Skipped."
+            review_failures=0
         fi
-    else
-        echo "No stories found in session."
-        echo "If the PM generated stories, you can copy the JSON and add manually to kai.json."
-    fi
-}
-
-_import_stories() {
-    local stories_json="$1"
-
-    if ! echo "$stories_json" | jq empty 2>/dev/null; then
-        echo "Invalid JSON."
-        return 1
     fi
 
-    max_id=$(jq '[.userStories[].id] | max // 0' "$PRD_FILE")
-    count=$(echo "$stories_json" | jq 'length')
-
-    echo "$stories_json" | jq -c '.[]' | while IFS= read -r story; do
-        max_id=$((max_id + 1))
-        title=$(echo "$story" | jq -r '.title')
-        desc=$(echo "$story" | jq -r '.description')
-        criteria=$(echo "$story" | jq '.acceptanceCriteria')
-
-        jq --arg title "$title" \
-           --arg desc "$desc" \
-           --argjson id "$max_id" \
-           --argjson criteria "$criteria" \
-           '.userStories += [{
-             id: $id,
-             title: $title,
-             description: $desc,
-             acceptanceCriteria: $criteria,
-             priority: $id,
-             passes: false
-           }]' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
-
-        echo "  #${max_id}: ${title}"
-    done
-
+    echo "Done in $((elapsed / 60))m $((elapsed % 60))s"
     echo ""
-    echo "Added ${count} stories."
-}
+done
+LOOPEOF
+chmod +x "$LOOP_SCRIPT"
 
-cmd_status() {
-    if [ ! -f "$PRD_FILE" ]; then
-        echo "kai.json not found. Run 'kai init' first."
-        exit 1
-    fi
+# ── Build status summary ──────────────────────────────
 
+status=""
+if [ -f "$PRD_FILE" ]; then
     total=$(jq '.userStories | length' "$PRD_FILE")
     done_count=$(jq '[.userStories[] | select(.passes == true)] | length' "$PRD_FILE")
     remaining=$((total - done_count))
+    if [ "$total" -gt 0 ]; then
+        status="
 
-    echo "Kai: ${done_count}/${total} complete (${remaining} remaining)"
-    echo ""
-
-    if [ "$remaining" -gt 0 ]; then
-        echo "Remaining:"
-        jq -r '.userStories[] | select(.passes == false) | "  \(.id): \(.title)"' "$PRD_FILE"
+Current progress: ${done_count}/${total} stories complete (${remaining} remaining).
+$(jq -r '.userStories[] | "- [\(if .passes then "DONE" else "TODO" end)] #\(.id): \(.title)"' "$PRD_FILE")"
     fi
-}
+fi
 
-cmd_reset() {
-    id="$1"
-    if [ -z "$id" ]; then
-        echo "Usage: kai reset <story-id>"
-        exit 1
-    fi
+project_context=""
+[ -f "$PROMPT_FILE" ] && project_context="
 
-    jq --argjson id "$id" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
-    echo "Reset story #${id}."
-}
+Project context (.kai/PROMPT.md):
+$(cat "$PROMPT_FILE")"
 
-cmd_go() {
-    ensure_init
+progress=""
+[ -f "$PROGRESS_FILE" ] && [ "$(wc -l < "$PROGRESS_FILE")" -gt 2 ] && progress="
 
-    # Collect context files
-    context_files="@${PROMPT_FILE} @${PRD_FILE} @${PROGRESS_FILE}"
-    if [ -f ".kai/context.txt" ]; then
-        while IFS= read -r file; do
-            [ -n "$file" ] && [ -f "$file" ] && context_files="$context_files @${file}"
-        done < .kai/context.txt
-    fi
+Recent progress (kai-progress.txt):
+$(tail -30 "$PROGRESS_FILE")"
 
-    echo "Starting Kai..."
-    echo "  Stories remaining: $(jq '[.userStories[] | select(.passes == false)] | length' "$PRD_FILE")"
-    echo "  Ctrl+C to stop"
-    echo ""
+# ── Launch the PM ─────────────────────────────────────
 
-    iteration=0
-    review_failures=0
+exec claude --system-prompt "You are Kai — an AI product manager and tech lead. You work directly with the developer to plan and ship software.
 
-    while :; do
-        iteration=$((iteration + 1))
-        REMAINING=$(jq '[.userStories[] | select(.passes == false)] | length' "$PRD_FILE")
+## What you can do
 
-        if [ "$REMAINING" -eq 0 ]; then
-            echo "All stories complete!"
-            break
-        fi
+1. **Brainstorm** — Help the developer think through ideas, make decisions, define scope
+2. **Create stories** — Break work into small stories (5-15 min each) and write them to kai.json
+3. **Run the dev loop** — Execute \`.kai/loop.sh\` to have an AI developer implement all stories autonomously
+4. **Check progress** — Read kai.json and kai-progress.txt to report status
+5. **Adjust the plan** — Edit stories, reprioritize, add new ones, reset failed ones
 
-        NEXT_ID=$(jq -r '[.userStories[] | select(.passes == false)] | sort_by(.priority) | .[0].id' "$PRD_FILE")
-        NEXT=$(jq -r '[.userStories[] | select(.passes == false)] | sort_by(.priority) | .[0].title' "$PRD_FILE")
+## How stories work
 
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "#${iteration} — $(date)"
-        echo "  Remaining: $REMAINING | Next: $NEXT"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Stories live in kai.json. Each has: id, title, description, acceptanceCriteria, priority, passes (true/false).
+To add stories, edit kai.json directly using the Edit or Write tool.
+To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` then monitor with \`tail -f .kai/loop.log\`
 
-        start_time=$(date +%s)
+## Rules for good stories
+- Each story: independently committable, 5-15 min of work
+- Acceptance criteria must be objectively verifiable
+- Last criterion should be a build/test command passing
+- Order by dependency (foundations first)
+- Include error handling, edge cases as separate stories
 
-        # ── Implement ──────────────────────────────────
-        set +e
-        result=$(claude -p \
-          --dangerously-skip-permissions \
-          $context_files)
-        exit_code=$?
-        set -e
-
-        end_time=$(date +%s)
-        elapsed=$(( end_time - start_time ))
-        minutes=$(( elapsed / 60 ))
-        seconds=$(( elapsed % 60 ))
-
-        echo "$result" | tail -20
-        echo ""
-
-        if [ $exit_code -ne 0 ]; then
-            echo "Iteration #${iteration} failed (code ${exit_code}). Restarting..."
-            continue
-        fi
-
-        if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
-            echo "All stories complete after $iteration iterations!"
-            exit 0
-        fi
-
-        # ── Review ─────────────────────────────────────
-        STORY_PASSES=$(jq -r ".userStories[] | select(.id == $NEXT_ID) | .passes" "$PRD_FILE")
-
-        if [ "$STORY_PASSES" = "true" ]; then
-            last_commit=$(git log --oneline -1 2>/dev/null || echo "no git")
-            last_diff_stat=$(git diff --stat HEAD~1 HEAD 2>/dev/null | tail -1)
-
-            # Sanity: real code changes?
-            if [ -z "$last_diff_stat" ] || [[ "$last_diff_stat" == *"0 insertions"*"0 deletions"* ]]; then
-                echo "REVIEW FAIL: No code changes in commit!"
-                jq --argjson id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
-                review_failures=$((review_failures + 1))
-                if [ $review_failures -ge 3 ]; then
-                    echo "3 failures on story #${NEXT_ID}. Skipping."
-                    jq --argjson id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = true | (.userStories[] | select(.id == $id)).concerns = "Skipped after 3 failures"' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
-                    review_failures=0
-                fi
-                continue
-            fi
-
-            # Dispatch reviewer
-            echo "Reviewing story #${NEXT_ID}..."
-            ACCEPTANCE=$(jq -r ".userStories[] | select(.id == $NEXT_ID) | .acceptanceCriteria | join(\"\n- \")" "$PRD_FILE")
-
-            set +e
-            review_result=$(claude -p \
-              --dangerously-skip-permissions \
-              "You are a code reviewer. The implementer claims story #${NEXT_ID} ('${NEXT}') is complete.
-
-Last commit: ${last_commit}
-Changes: ${last_diff_stat}
-
-Acceptance criteria:
-- ${ACCEPTANCE}
-
-Instructions:
-1. Read the changed files (git diff HEAD~1 HEAD).
-2. For EACH criterion, verify it is met by the actual code. Be skeptical.
-3. Run the build/test command if applicable.
-4. If ANY criterion is not met: REVIEW_FAIL: [which criterion and why]
-5. If all criteria met: REVIEW_PASS
-
-Do NOT trust the implementer's self-report. Verify independently.")
-            review_exit=$?
-            set -e
-
-            echo "$review_result" | tail -10
-
-            if [[ "$review_result" == *"REVIEW_FAIL"* ]]; then
-                echo "Review failed!"
-                jq --argjson id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
-                echo "" >> "$PROGRESS_FILE"
-                echo "## REVIEW FEEDBACK for Story $NEXT_ID" >> "$PROGRESS_FILE"
-                echo "$review_result" | grep -i "REVIEW_FAIL" >> "$PROGRESS_FILE" 2>/dev/null
-                review_failures=$((review_failures + 1))
-                if [ $review_failures -ge 3 ]; then
-                    echo "3 review failures on story #${NEXT_ID}. Skipping."
-                    jq --argjson id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = true | (.userStories[] | select(.id == $id)).concerns = "Passed after 3 review attempts"' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
-                    review_failures=0
-                fi
-            else
-                echo "Review passed."
-                review_failures=0
-            fi
-        fi
-
-        echo "Iteration #${iteration} done in ${minutes}m ${seconds}s"
-        last_commit=$(git log --oneline -1 2>/dev/null || echo "")
-        [ -n "$last_commit" ] && echo "  Last commit: ${last_commit}"
-        echo ""
-    done
-
-    echo "Kai finished after ${iteration} iterations."
-}
-
-# ── Main ───────────────────────────────────────────────
-
-case "${1:-help}" in
-    init)    cmd_init ;;
-    plan)    shift; cmd_plan "$@" ;;
-    go)      cmd_go ;;
-    status)  cmd_status ;;
-    reset)   shift; cmd_reset "$@" ;;
-    help|*)  cmd_help ;;
-esac
+## Your personality
+- You're a hands-on PM who understands code
+- Be direct and concise
+- Make decisions, don't just list options
+- When the developer says \"ship it\" or \"go\" or \"do it\", start the loop
+- Don't ask unnecessary questions — use good defaults
+${status}${project_context}${progress}" "$@"
