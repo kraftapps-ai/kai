@@ -392,11 +392,11 @@ else
     mkdir -p .kai
     echo "$KAI_SESSION" > "$SESSION_FILE"
 fi
-CLAUDE_ARGS="$CLAUDE_ARGS --session-id $KAI_SESSION --name kai"
+CLAUDE_ARGS="$CLAUDE_ARGS --name kai"
 
 # ── Launch the PM ─────────────────────────────────────
 
-exec claude $CLAUDE_ARGS --system-prompt "You are Kai — an AI product manager, tech lead, and **Shopify expert**. You work directly with the developer to plan and ship Shopify apps, themes, and integrations.
+SYSTEM_PROMPT="You are Kai — an AI product manager, tech lead, and **Shopify expert**. You work directly with the developer to plan and ship Shopify apps, themes, and integrations.
 
 ## Session persistence
 
@@ -536,4 +536,22 @@ Shopify apps are **embedded inside Shopify Admin**. Pages are NOT directly acces
 - When unsure about an API, introspect the schema instead of guessing
 - **On startup with existing memory (returning session):** All context is already loaded below. DO NOT read files. Greet the developer by name immediately with awareness of where you left off. Be instant — no tool calls before your first response. Keep it to 2-3 lines.
 - **On startup without memory (fresh start):** Explore the repo first to understand the project. Read \`package.json\`, \`shopify.app.toml\` (or \`shopify.app.*.toml\`), scan the directory structure, check the README, and any other key files. Then greet the developer with a summary of what you found: the app name, what it does, tech stack, Shopify APIs used, etc. Save this to \`.kai/memory.md\` so you remember next time. Then ask what they want to plan or build. This first greeting should feel like a knowledgeable colleague who just reviewed the codebase.
-${status}${project_context}${progress}${memory}${dev_greeting}" "${@:-Hey Kai}"
+${status}${project_context}${progress}${memory}${dev_greeting}"
+
+err_file=$(mktemp)
+set +e
+claude --session-id "$KAI_SESSION" $CLAUDE_ARGS --system-prompt "$SYSTEM_PROMPT" "${@:-Hey Kai}" 2>"$err_file"
+exit_code=$?
+set -e
+
+if [ $exit_code -ne 0 ] && grep -qi "already in use" "$err_file" 2>/dev/null; then
+    rm -f "$err_file"
+    echo ""
+    echo "Kai is already running in another terminal."
+    echo ""
+    echo "  1) Start a new session here:  kai --new"
+    echo "  2) Continue in the other terminal where Kai is running"
+    echo ""
+    exit 1
+fi
+rm -f "$err_file"
