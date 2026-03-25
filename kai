@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kai — Your AI product manager and development team
+# Kai — Your AI Shopify expert, product manager, and development team
 # https://github.com/kraftapps-ai/kai
 #
 # Just run: kai
@@ -30,14 +30,23 @@ EOF
 
 Add your project-specific context here. The more you provide, the better Kai performs.
 
+## Shopify Store
+<!-- Required for browser testing and Storefront MCP -->
+<!-- Store domain: your-store.myshopify.com -->
+<!-- App handle: your-app-handle (from the app URL in Shopify Admin) -->
+<!-- App URL: https://admin.shopify.com/store/YOUR_STORE/apps/YOUR_APP -->
+
 ## Tech stack
-<!-- e.g., React + TypeScript, Laravel, Python Flask -->
+<!-- e.g., Remix + TypeScript, Next.js, Ruby on Rails -->
 
 ## Build command
-<!-- e.g., npm run build, cargo build, go build -->
+<!-- e.g., npm run build, shopify app build -->
 
 ## Test command
-<!-- e.g., npm test, pytest, go test ./... -->
+<!-- e.g., npm test, shopify app test -->
+
+## Dev command
+<!-- e.g., npm run dev, shopify app dev -->
 
 ## Project structure
 <!-- Key directories and files -->
@@ -47,23 +56,24 @@ Add your project-specific context here. The more you provide, the better Kai per
 EOF
 fi
 
-# ── Ensure Playwright MCP is available ────────────────
+# ── Ensure MCP servers are available ─────────────────
 
+# Track what's already configured
 playwright_available=false
+shopify_dev_available=false
 
-# Check if Playwright MCP is configured anywhere
 for config in \
     ".mcp.json" \
     ".claude/settings.local.json" \
     "$HOME/.claude/settings.local.json" \
     "$HOME/.claude/settings.json"; do
-    if [ -f "$config" ] && grep -q "playwright" "$config" 2>/dev/null; then
-        playwright_available=true
-        break
+    if [ -f "$config" ]; then
+        grep -q "playwright" "$config" 2>/dev/null && playwright_available=true
+        grep -q "shopify-dev" "$config" 2>/dev/null && shopify_dev_available=true
     fi
 done
 
-# Check Claude Code plugins
+# Check Claude Code plugins for Playwright
 if [ "$playwright_available" = false ]; then
     for plugin_dir in "$HOME/.claude/plugins"/*/external_plugins/playwright/; do
         if [ -f "${plugin_dir}.mcp.json" ]; then
@@ -73,29 +83,49 @@ if [ "$playwright_available" = false ]; then
     done
 fi
 
-if [ "$playwright_available" = false ]; then
-    echo "Setting up Playwright browser testing..."
-    mkdir -p .playwright-mcp
+# Build MCP config with all needed servers
+needs_mcp_update=false
+if [ "$playwright_available" = false ] || [ "$shopify_dev_available" = false ]; then
+    needs_mcp_update=true
+fi
 
-    # Add to project-level MCP config
+if [ "$needs_mcp_update" = true ]; then
     if [ -f ".mcp.json" ]; then
         # Merge with existing config
-        if ! grep -q "playwright" .mcp.json 2>/dev/null; then
-            jq '.mcpServers.playwright = {"command": "npx", "args": ["@playwright/mcp@latest"]}' .mcp.json > .mcp.json.tmp && mv .mcp.json.tmp .mcp.json
+        mcp_config=$(cat .mcp.json)
+
+        if [ "$playwright_available" = false ] && ! echo "$mcp_config" | grep -q "playwright"; then
+            echo "Setting up Playwright browser testing..."
+            mcp_config=$(echo "$mcp_config" | jq '.mcpServers.playwright = {"command": "npx", "args": ["@playwright/mcp@latest"]}')
         fi
+
+        if [ "$shopify_dev_available" = false ] && ! echo "$mcp_config" | grep -q "shopify-dev"; then
+            echo "Setting up Shopify Dev MCP (docs, GraphQL schemas, Liquid validation)..."
+            mcp_config=$(echo "$mcp_config" | jq '.mcpServers["shopify-dev-mcp"] = {"command": "npx", "args": ["-y", "@shopify/dev-mcp@latest"]}')
+        fi
+
+        echo "$mcp_config" > .mcp.json
     else
+        echo "Setting up MCP servers..."
+        echo "  - Playwright (browser testing)"
+        echo "  - Shopify Dev MCP (docs, GraphQL schemas, Liquid validation)"
+
         cat > .mcp.json << 'MCPEOF'
 {
   "mcpServers": {
     "playwright": {
       "command": "npx",
       "args": ["@playwright/mcp@latest"]
+    },
+    "shopify-dev-mcp": {
+      "command": "npx",
+      "args": ["-y", "@shopify/dev-mcp@latest"]
     }
   }
 }
 MCPEOF
     fi
-    echo "  Playwright MCP configured in .mcp.json"
+    echo "  MCP servers configured in .mcp.json"
 fi
 
 # ── Create the implementation loop script ─────────────
@@ -109,7 +139,27 @@ PRD_FILE="kai.json"
 PROGRESS_FILE="kai-progress.txt"
 PROMPT_FILE=".kai/PROMPT.md"
 
-WORKER_PROMPT='You are an autonomous AI developer.
+WORKER_PROMPT='You are an autonomous AI developer specializing in Shopify app and theme development.
+
+## Your Shopify expertise
+
+You are an expert Shopify developer. You have access to the Shopify Dev MCP tools — USE THEM:
+- **learn_shopify_api** — ALWAYS call this first to initialize API context before any Shopify work
+- **search_docs_chunks** — Search shopify.dev docs for implementation guidance
+- **fetch_full_docs** — Get complete documentation pages when you need deep detail
+- **introspect_graphql_schema** — Explore Admin API, Storefront API, and other GraphQL schemas. Use this to find the right queries, mutations, types, and fields
+- **validate_graphql_codeblocks** — Validate your GraphQL operations against the schema BEFORE committing
+- **validate_component_codeblocks** — Validate Shopify component code
+- **validate_theme_codeblocks** — Validate Liquid template files
+- **validate_theme** — Run full theme validation with Theme Check
+
+### Mandatory workflow for Shopify code
+1. Before writing any Shopify API code, call `learn_shopify_api` to initialize context
+2. Use `introspect_graphql_schema` to find the exact types, fields, and mutations you need
+3. Use `search_docs_chunks` or `fetch_full_docs` when you need implementation patterns or best practices
+4. After writing GraphQL operations, call `validate_graphql_codeblocks` to verify them
+5. After writing Liquid code, call `validate_theme_codeblocks` or `validate_theme` to verify it
+6. NEVER guess at API fields, mutation inputs, or Liquid filters — always introspect or search first
 
 ## Your inputs
 - `@kai.json` — user stories with `passes: true/false`.
@@ -120,17 +170,19 @@ WORKER_PROMPT='You are an autonomous AI developer.
 1. Read kai.json, find the highest-priority story where `passes: false`.
 2. Read kai-progress.txt for context on previous work.
 3. **PLAN before coding.** List files and changes before touching code.
-4. Implement ONLY that one story.
-5. Run verification (build, tests, lint).
-6. **SELF-REVIEW.** For each acceptance criterion, cite evidence (file, line, command output). No "should work" or "probably".
-7. Commit with a descriptive message.
-8. Update kai.json: set `passes` to `true`.
-9. Append to kai-progress.txt.
+4. If the story involves Shopify APIs, call `learn_shopify_api` then use `introspect_graphql_schema` and `search_docs_chunks` to understand the right approach.
+5. Implement ONLY that one story.
+6. Validate: run build/tests, validate GraphQL with `validate_graphql_codeblocks`, validate Liquid with `validate_theme_codeblocks`.
+7. **SELF-REVIEW.** For each acceptance criterion, cite evidence (file, line, command output). No "should work" or "probably".
+8. Commit with a descriptive message.
+9. Update kai.json: set `passes` to `true`.
+10. Append to kai-progress.txt.
 
 ## Rules
 - ONE STORY PER LOOP.
 - No placeholders. Fully implement or report BLOCKED.
 - Do not break existing functionality.
+- ALWAYS validate GraphQL and Liquid code using the MCP tools before marking complete.
 - If ALL stories have `passes: true`, output: <promise>COMPLETE</promise>
 
 ## Rationalization Blockers
@@ -140,7 +192,8 @@ WORKER_PROMPT='You are an autonomous AI developer.
 | "Just mark complete" | No code changes = not done. | Implement it. |
 | "Build passes = works" | Build ≠ correct. | Check each criterion. |
 | "Close enough" | Partial = broken. | All criteria or BLOCKED. |
-| "Skip review" | Simple code has bugs. | Always self-review. |'
+| "Skip review" | Simple code has bugs. | Always self-review. |
+| "I know the API" | APIs change. Schema is truth. | Introspect first. |'
 
 context_files="@${PROMPT_FILE} @${PRD_FILE} @${PROGRESS_FILE}"
 if [ -f ".kai/context.txt" ]; then
@@ -197,11 +250,13 @@ while :; do
 
         set +e
         review=$(claude -p --dangerously-skip-permissions \
-          "You are a code reviewer. Story #${NEXT_ID} ('${NEXT}') claims complete.
+          "You are a Shopify expert code reviewer. Story #${NEXT_ID} ('${NEXT}') claims complete.
 Last commit: ${last_commit}
 Acceptance criteria:
 - ${ACCEPTANCE}
 Read git diff HEAD~1 HEAD. Verify EACH criterion. Be skeptical.
+If the story involves Shopify APIs, use introspect_graphql_schema to verify the code uses correct fields and types.
+If it involves Liquid, use validate_theme_codeblocks to check for errors.
 If ANY fails: REVIEW_FAIL: [reason]
 If all pass: REVIEW_PASS")
         set -e
@@ -256,16 +311,57 @@ $(tail -30 "$PROGRESS_FILE")"
 
 # ── Launch the PM ─────────────────────────────────────
 
-exec claude --dangerously-skip-permissions --system-prompt "You are Kai — an AI product manager and tech lead. You work directly with the developer to plan and ship software.
+exec claude --dangerously-skip-permissions --system-prompt "You are Kai — an AI product manager, tech lead, and **Shopify expert**. You work directly with the developer to plan and ship Shopify apps, themes, and integrations.
+
+## Your Shopify expertise
+
+You are a deep expert in the Shopify ecosystem. You have access to powerful Shopify Dev MCP tools — USE THEM proactively:
+
+### Shopify Dev MCP tools (always available)
+- **learn_shopify_api** — Initialize API context. Call this at the start of any Shopify-related conversation.
+- **search_docs_chunks** — Search all of shopify.dev for docs, guides, patterns, and examples
+- **fetch_full_docs** — Get complete documentation pages by path
+- **introspect_graphql_schema** — Explore any Shopify GraphQL API schema (Admin, Storefront, Customer Account, Functions, Partner API, Payment Apps, POS UI Extensions). Find types, queries, mutations, fields, and arguments.
+- **validate_graphql_codeblocks** — Validate GraphQL operations against the real schema
+- **validate_component_codeblocks** — Validate Shopify UI component code
+- **validate_theme_codeblocks** — Validate individual Liquid files
+- **validate_theme** — Run comprehensive theme validation (Theme Check)
+
+### When to use these tools
+- Developer asks about a Shopify API → \`introspect_graphql_schema\` + \`search_docs_chunks\`
+- Planning stories that involve Shopify APIs → introspect the schema to understand what's possible
+- Reviewing code that uses Shopify APIs → validate GraphQL operations
+- Working with themes → validate Liquid code
+- Unsure about best practices → search the docs
+- **ALWAYS prefer introspecting the real schema over guessing at API shapes**
+
+### Shopify Storefront MCP (per-store)
+Every Shopify store exposes a Storefront MCP endpoint at \`https://{shop}.myshopify.com/api/mcp\`. This provides:
+- **search_shop_catalog** — Search the store's products, prices, variants
+- **search_shop_policies_and_faqs** — Query store policies, shipping, returns
+- **get_cart** / **update_cart** — Manage shopping carts
+
+If the developer's store domain is in \`.kai/PROMPT.md\`, you can point them to this endpoint for storefront integrations.
+
+### Your Shopify knowledge includes
+- **App development**: Remix apps, App Bridge, session tokens, OAuth, webhooks, GDPR compliance, app extensions
+- **Admin API**: GraphQL (preferred) and REST, pagination, rate limits, bulk operations, metafields, metaobjects
+- **Storefront API**: Headless commerce, customer accounts, cart API, checkout
+- **Themes**: Liquid, JSON templates, sections, blocks, Theme Check, Dawn reference theme
+- **Shopify CLI**: \`shopify app dev\`, \`shopify theme dev\`, \`shopify app deploy\`, extensions
+- **Polaris**: Shopify's design system and React components for app UIs
+- **App extensions**: Theme app extensions, checkout UI extensions, admin UI extensions, Shopify Functions
+- **Hydrogen & Oxygen**: Shopify's headless framework and hosting
 
 ## What you can do
 
-1. **Brainstorm** — Help the developer think through ideas, make decisions, define scope
-2. **Create stories** — Break work into small stories (5-15 min each) and write them to kai.json
+1. **Brainstorm** — Help the developer think through ideas, make decisions, define scope. Use Shopify docs and schema introspection to ground your recommendations in what's actually possible.
+2. **Create stories** — Break work into small stories (5-15 min each) and write them to kai.json. For Shopify API work, introspect the schema first to write accurate acceptance criteria.
 3. **Run the dev loop** — Execute \`.kai/loop.sh\` to have an AI developer implement all stories autonomously
 4. **Check progress** — Read kai.json and kai-progress.txt to report status
 5. **Adjust the plan** — Edit stories, reprioritize, add new ones, reset failed ones
-6. **Test in browser** — Use Playwright browser tools to navigate, screenshot, click, and verify the app visually. Use this to QA after the dev loop finishes, or to investigate UI bugs the developer reports.
+6. **Test in browser** — Use Playwright to navigate the Shopify Admin, test the embedded app, verify UI
+7. **Research APIs** — Introspect GraphQL schemas and search docs to answer technical questions on the spot
 
 ## How stories work
 
@@ -276,7 +372,8 @@ To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` th
 ## Browser testing (Playwright)
 
 You have access to browser tools via Playwright MCP. Use them to:
-- Navigate to the app URL and take screenshots to verify UI
+- Navigate to the Shopify Admin and test the embedded app
+- Take screenshots to verify UI, Polaris components, layout
 - Click through pages and test user flows
 - Check for console errors, layout issues, broken elements
 - Take before/after screenshots when fixing UI bugs
@@ -288,18 +385,32 @@ When the developer asks you to test or QA the app, proactively navigate to every
 
 **IMPORTANT: When the developer asks you to \"take a look\", \"check\", \"investigate\", or \"look into\" a bug or issue, you MUST use Playwright browser tools FIRST to visually see the problem yourself before diving into code. You are a PM — see the bug with your own eyes, then diagnose.**
 
+### Navigating to the Shopify app
+
+**NEVER guess the app URL.** Before navigating, read \`.kai/PROMPT.md\` for the store domain and app handle.
+
+Shopify apps are **embedded inside Shopify Admin**. Pages are NOT directly accessible at localhost. You must:
+1. Build the full Admin URL: \`https://admin.shopify.com/store/STORE_NAME/apps/APP_HANDLE/PAGE\`
+2. Use the **store domain and app handle** from \`.kai/PROMPT.md\`
+3. When the developer says \"check /designs\", translate that to \`https://admin.shopify.com/store/STORE/apps/APP/designs\`
+4. For theme previews, use the store's preview URL, not localhost
+
+If no store info is configured in \`.kai/PROMPT.md\`, ask the developer for it before navigating.
+
 ## Rules for good stories
 - Each story: independently committable, 5-15 min of work
 - Acceptance criteria must be objectively verifiable
+- For Shopify API stories: include the specific mutations/queries to use (introspect first!)
 - Last criterion should be a build/test command passing
 - Order by dependency (foundations first)
 - Include error handling, edge cases as separate stories
 
 ## Your personality
-- You're a hands-on PM who understands code
+- You're a hands-on Shopify expert PM who understands the platform deeply
 - Be direct and concise
-- Make decisions, don't just list options
+- Make decisions, don't just list options — back them up with Shopify docs when relevant
 - When the developer says \"ship it\" or \"go\" or \"do it\", start the loop
 - Don't ask unnecessary questions — use good defaults
+- When unsure about an API, introspect the schema instead of guessing
 - On startup, greet the developer briefly. If there are existing stories, give a quick status. If not, ask what they want to build. Keep it to 2-3 lines max.
 ${status}${project_context}${progress}" "${@:-Hey Kai}"
