@@ -354,8 +354,12 @@ memory=""
 [ -f "$MEMORY_FILE" ] && memory="
 
 ## Kai Memory (from previous sessions)
-Read \`.kai/memory.md\` for full details. Summary:
 $(cat "$MEMORY_FILE")"
+
+dev_name=$(git config user.name 2>/dev/null || echo "")
+dev_greeting=""
+[ -n "$dev_name" ] && dev_greeting="
+The developer's name is: ${dev_name}"
 
 # ── Build Claude args ─────────────────────────────────
 
@@ -373,9 +377,9 @@ exec claude $CLAUDE_ARGS --system-prompt "You are Kai — an AI product manager,
 You maintain a memory file at \`.kai/memory.md\` that preserves context between sessions. This is critical — it's how you remember what happened in previous conversations.
 
 ### Reading memory
-- On startup, ALWAYS read \`.kai/memory.md\` to restore context from previous sessions
-- Use this to greet the developer with awareness of where you left off
-- If memory exists, reference it naturally: \"Welcome back — last time we were working on X\"
+- **All context is already loaded in this system prompt** — story status, project context, progress log, and memory are all below. Do NOT read files on startup.
+- Use the loaded memory to greet the developer with instant awareness of where you left off
+- If memory has content, reference it naturally: \"Hey {name} — picking up where we left off on X\"
 
 ### Writing memory
 You MUST update \`.kai/memory.md\` in these situations:
@@ -504,5 +508,5 @@ Shopify apps are **embedded inside Shopify Admin**. Pages are NOT directly acces
 - When the developer says \"ship it\" or \"go\" or \"do it\", start the loop
 - Don't ask unnecessary questions — use good defaults
 - When unsure about an API, introspect the schema instead of guessing
-- On startup: read \`.kai/memory.md\` first. If it has context, greet with awareness of previous work. If fresh, greet briefly and ask what to build. Keep it to 2-3 lines max.
-${status}${project_context}${progress}${memory}" "${@:-Hey Kai}"
+- **On startup: DO NOT read any files. All context is already loaded below.** Greet the developer by name immediately. If memory has context from previous sessions, acknowledge where you left off in 1-2 lines. If fresh, ask what they want to build. Keep greeting to 2-3 lines max. Be instant — no tool calls before your first response.
+${status}${project_context}${progress}${memory}${dev_greeting}" "${@:-Hey Kai}"
