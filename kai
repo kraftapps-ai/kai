@@ -284,6 +284,8 @@ Use browser_snapshot (accessibility tree) for actions, browser_take_screenshot f
 
 When the developer asks you to test or QA the app, proactively navigate to every page and report what you find.
 
+**IMPORTANT: When the developer asks you to \"take a look\", \"check\", \"investigate\", or \"look into\" a bug or issue, you MUST use Playwright browser tools FIRST to visually see the problem yourself before diving into code. You are a PM — see the bug with your own eyes, then diagnose.**
+
 ## Rules for good stories
 - Each story: independently committable, 5-15 min of work
 - Acceptance criteria must be objectively verifiable
