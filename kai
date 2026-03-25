@@ -18,13 +18,13 @@ fi
 PRD_FILE=".kai/stories.json"
 PROGRESS_FILE=".kai/progress.txt"
 MEMORY_FILE=".kai/memory.md"
-SESSION_FILE=".kai/session_id"
 LOOP_SCRIPT=".kai/loop.sh"
 
 # ── Handle --new flag ─────────────────────────────────
 
+NEW_SESSION=false
 if [ "${1:-}" = "--new" ]; then
-    rm -f "$SESSION_FILE"
+    NEW_SESSION=true
     shift
 fi
 
@@ -367,17 +367,15 @@ The developer's name is: ${dev_name}"
 
 # ── Build Claude args ─────────────────────────────────
 
-CLAUDE_ARGS="--dangerously-skip-permissions"
+CLAUDE_ARGS="--dangerously-skip-permissions --name kai"
 
-# Session persistence: reuse the same session ID per repo
-if [ -f "$SESSION_FILE" ]; then
-    KAI_SESSION=$(cat "$SESSION_FILE")
-else
-    KAI_SESSION=$(uuidgen 2>/dev/null || python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null)
-    mkdir -p .kai
-    echo "$KAI_SESSION" > "$SESSION_FILE"
+# Resume last conversation if memory exists and not --new
+if [ "$NEW_SESSION" = false ] && [ -f "$MEMORY_FILE" ]; then
+    stripped_check=$(sed 's/<!--.*-->//g' "$MEMORY_FILE" | sed '/^$/N;/^\n$/d')
+    if echo "$stripped_check" | grep -qvE '^(#|$)'; then
+        CLAUDE_ARGS="$CLAUDE_ARGS --continue"
+    fi
 fi
-CLAUDE_ARGS="$CLAUDE_ARGS --name kai"
 
 # ── Launch the PM ─────────────────────────────────────
 
@@ -533,20 +531,4 @@ When the developer says \"check /designs\", translate that to the full URL using
 - **On startup without memory (fresh start):** Explore the repo first to understand the project. Read \`package.json\`, \`shopify.app.toml\` (or \`shopify.app.*.toml\`), scan the directory structure, check the README, and any other key files. Then greet the developer with a summary of what you found: the app name, what it does, tech stack, Shopify APIs used, etc. Save this to \`.kai/memory.md\` so you remember next time. Then ask what they want to plan or build. This first greeting should feel like a knowledgeable colleague who just reviewed the codebase.
 ${status}${progress}${memory}${dev_greeting}"
 
-err_file=$(mktemp)
-set +e
-claude --session-id "$KAI_SESSION" $CLAUDE_ARGS --system-prompt "$SYSTEM_PROMPT" "${@:-Hey Kai}" 2>"$err_file"
-exit_code=$?
-set -e
-
-if [ $exit_code -ne 0 ] && grep -qi "already in use" "$err_file" 2>/dev/null; then
-    rm -f "$err_file"
-    echo ""
-    echo "Kai is already running in another terminal."
-    echo ""
-    echo "  1) Start a new session here:  kai --new"
-    echo "  2) Continue in the other terminal where Kai is running"
-    echo ""
-    exit 1
-fi
-rm -f "$err_file"
+exec claude $CLAUDE_ARGS --system-prompt "$SYSTEM_PROMPT" "${@:-Hey Kai}"
