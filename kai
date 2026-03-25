@@ -20,13 +20,6 @@ PROGRESS_FILE=".kai/progress.txt"
 MEMORY_FILE=".kai/memory.md"
 LOOP_SCRIPT=".kai/loop.sh"
 
-# ── Handle --new flag ─────────────────────────────────
-
-NEW_SESSION=false
-if [ "${1:-}" = "--new" ]; then
-    NEW_SESSION=true
-    shift
-fi
 
 # ── Ensure .kai/ is git-ignored ───────────────────────
 
@@ -368,14 +361,6 @@ The developer's name is: ${dev_name}"
 # ── Build Claude args ─────────────────────────────────
 
 CLAUDE_ARGS="--dangerously-skip-permissions --name kai"
-
-# Resume last conversation if memory exists and not --new
-if [ "$NEW_SESSION" = false ] && [ -f "$MEMORY_FILE" ]; then
-    stripped_check=$(sed 's/<!--.*-->//g' "$MEMORY_FILE" | sed '/^$/N;/^\n$/d')
-    if echo "$stripped_check" | grep -qvE '^(#|$)'; then
-        CLAUDE_ARGS="$CLAUDE_ARGS --continue"
-    fi
-fi
 
 # ── Launch the PM ─────────────────────────────────────
 
