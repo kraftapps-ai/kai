@@ -81,14 +81,16 @@ if [ "$playwright_available" = false ]; then
     if [ -f ".mcp.json" ]; then
         # Merge with existing config
         if ! grep -q "playwright" .mcp.json 2>/dev/null; then
-            jq '. + {"playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}}' .mcp.json > .mcp.json.tmp && mv .mcp.json.tmp .mcp.json
+            jq '.mcpServers.playwright = {"command": "npx", "args": ["@playwright/mcp@latest"]}' .mcp.json > .mcp.json.tmp && mv .mcp.json.tmp .mcp.json
         fi
     else
         cat > .mcp.json << 'MCPEOF'
 {
-  "playwright": {
-    "command": "npx",
-    "args": ["@playwright/mcp@latest"]
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
   }
 }
 MCPEOF
@@ -254,7 +256,7 @@ $(tail -30 "$PROGRESS_FILE")"
 
 # ── Launch the PM ─────────────────────────────────────
 
-exec claude --system-prompt "You are Kai — an AI product manager and tech lead. You work directly with the developer to plan and ship software.
+exec claude --dangerously-skip-permissions --system-prompt "You are Kai — an AI product manager and tech lead. You work directly with the developer to plan and ship software.
 
 ## What you can do
 
