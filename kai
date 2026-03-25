@@ -23,13 +23,25 @@ if [ "${1:-}" = "--new" ]; then
     shift
 fi
 
-PRD_FILE="kai.json"
-PROGRESS_FILE="kai-progress.txt"
+PRD_FILE=".kai/stories.json"
+PROGRESS_FILE=".kai/progress.txt"
 PROMPT_FILE=".kai/PROMPT.md"
 MEMORY_FILE=".kai/memory.md"
 LOOP_SCRIPT=".kai/loop.sh"
 
 # ── Auto-init if needed ───────────────────────────────
+
+# Migrate old file locations (pre-1.5.0)
+if [ -f "kai.json" ] && [ ! -f "$PRD_FILE" ]; then
+    mkdir -p .kai
+    mv kai.json "$PRD_FILE"
+    echo "  Migrated kai.json → $PRD_FILE"
+fi
+if [ -f "kai-progress.txt" ] && [ ! -f "$PROGRESS_FILE" ]; then
+    mkdir -p .kai
+    mv kai-progress.txt "$PROGRESS_FILE"
+    echo "  Migrated kai-progress.txt → $PROGRESS_FILE"
+fi
 
 if [ ! -f "$PRD_FILE" ]; then
     mkdir -p .kai
@@ -176,8 +188,8 @@ cat > "$LOOP_SCRIPT" << 'LOOPEOF'
 # Kai implementation loop — called by the PM when stories are ready
 set -e
 
-PRD_FILE="kai.json"
-PROGRESS_FILE="kai-progress.txt"
+PRD_FILE=".kai/stories.json"
+PROGRESS_FILE=".kai/progress.txt"
 PROMPT_FILE=".kai/PROMPT.md"
 
 WORKER_PROMPT='You are an autonomous AI developer specializing in Shopify app and theme development.
@@ -203,21 +215,21 @@ You are an expert Shopify developer. You have access to the Shopify Dev MCP tool
 6. NEVER guess at API fields, mutation inputs, or Liquid filters — always introspect or search first
 
 ## Your inputs
-- `@kai.json` — user stories with `passes: true/false`.
-- `@kai-progress.txt` — log of what has been done.
+- `@.kai/stories.json` — user stories with `passes: true/false`.
+- `@.kai/progress.txt` — log of what has been done.
 
 ## Your task (ONE story per loop)
 
-1. Read kai.json, find the highest-priority story where `passes: false`.
-2. Read kai-progress.txt for context on previous work.
+1. Read .kai/stories.json, find the highest-priority story where `passes: false`.
+2. Read .kai/progress.txt for context on previous work.
 3. **PLAN before coding.** List files and changes before touching code.
 4. If the story involves Shopify APIs, call `learn_shopify_api` then use `introspect_graphql_schema` and `search_docs_chunks` to understand the right approach.
 5. Implement ONLY that one story.
 6. Validate: run build/tests, validate GraphQL with `validate_graphql_codeblocks`, validate Liquid with `validate_theme_codeblocks`.
 7. **SELF-REVIEW.** For each acceptance criterion, cite evidence (file, line, command output). No "should work" or "probably".
 8. Commit with a descriptive message.
-9. Update kai.json: set `passes` to `true`.
-10. Append to kai-progress.txt.
+9. Update .kai/stories.json: set `passes` to `true`.
+10. Append to .kai/progress.txt.
 
 ## Rules
 - ONE STORY PER LOOP.
@@ -347,7 +359,7 @@ $(cat "$PROMPT_FILE")"
 progress=""
 [ -f "$PROGRESS_FILE" ] && [ "$(wc -l < "$PROGRESS_FILE")" -gt 2 ] && progress="
 
-Recent progress (kai-progress.txt):
+Recent progress (.kai/progress.txt):
 $(tail -30 "$PROGRESS_FILE")"
 
 memory=""
@@ -441,17 +453,17 @@ If the developer's store domain is in \`.kai/PROMPT.md\`, you can point them to 
 ## What you can do
 
 1. **Brainstorm** — Help the developer think through ideas, make decisions, define scope. Use Shopify docs and schema introspection to ground your recommendations in what's actually possible.
-2. **Create stories** — Break work into small stories (5-15 min each) and write them to kai.json. For Shopify API work, introspect the schema first to write accurate acceptance criteria.
+2. **Create stories** — Break work into small stories (5-15 min each) and write them to .kai/stories.json. For Shopify API work, introspect the schema first to write accurate acceptance criteria.
 3. **Run the dev loop** — Execute \`.kai/loop.sh\` to have an AI developer implement all stories autonomously
-4. **Check progress** — Read kai.json and kai-progress.txt to report status
+4. **Check progress** — Read .kai/stories.json and .kai/progress.txt to report status
 5. **Adjust the plan** — Edit stories, reprioritize, add new ones, reset failed ones
 6. **Test in browser** — Use Playwright to navigate the Shopify Admin, test the embedded app, verify UI
 7. **Research APIs** — Introspect GraphQL schemas and search docs to answer technical questions on the spot
 
 ## How stories work
 
-Stories live in kai.json. Each has: id, title, description, acceptanceCriteria, priority, passes (true/false).
-To add stories, edit kai.json directly using the Edit or Write tool.
+Stories live in .kai/stories.json. Each has: id, title, description, acceptanceCriteria, priority, passes (true/false).
+To add stories, edit .kai/stories.json directly using the Edit or Write tool.
 To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` then monitor with \`tail -f .kai/loop.log\`
 
 ## Browser testing (Playwright)
