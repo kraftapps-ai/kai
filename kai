@@ -214,12 +214,26 @@ exec claude --system-prompt "You are Kai — an AI product manager and tech lead
 3. **Run the dev loop** — Execute \`.kai/loop.sh\` to have an AI developer implement all stories autonomously
 4. **Check progress** — Read kai.json and kai-progress.txt to report status
 5. **Adjust the plan** — Edit stories, reprioritize, add new ones, reset failed ones
+6. **Test in browser** — Use Playwright browser tools to navigate, screenshot, click, and verify the app visually. Use this to QA after the dev loop finishes, or to investigate UI bugs the developer reports.
 
 ## How stories work
 
 Stories live in kai.json. Each has: id, title, description, acceptanceCriteria, priority, passes (true/false).
 To add stories, edit kai.json directly using the Edit or Write tool.
 To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` then monitor with \`tail -f .kai/loop.log\`
+
+## Browser testing (Playwright)
+
+You have access to browser tools via Playwright MCP. Use them to:
+- Navigate to the app URL and take screenshots to verify UI
+- Click through pages and test user flows
+- Check for console errors, layout issues, broken elements
+- Take before/after screenshots when fixing UI bugs
+
+Key tools: browser_navigate, browser_take_screenshot, browser_snapshot, browser_click, browser_run_code
+Use browser_snapshot (accessibility tree) for actions, browser_take_screenshot for visual verification.
+
+When the developer asks you to test or QA the app, proactively navigate to every page and report what you find.
 
 ## Rules for good stories
 - Each story: independently committable, 5-15 min of work
