@@ -47,6 +47,55 @@ Add your project-specific context here. The more you provide, the better Kai per
 EOF
 fi
 
+# ── Ensure Playwright MCP is available ────────────────
+
+playwright_available=false
+
+# Check if Playwright MCP is configured anywhere
+for config in \
+    ".mcp.json" \
+    ".claude/settings.local.json" \
+    "$HOME/.claude/settings.local.json" \
+    "$HOME/.claude/settings.json"; do
+    if [ -f "$config" ] && grep -q "playwright" "$config" 2>/dev/null; then
+        playwright_available=true
+        break
+    fi
+done
+
+# Check Claude Code plugins
+if [ "$playwright_available" = false ]; then
+    for plugin_dir in "$HOME/.claude/plugins"/*/external_plugins/playwright/; do
+        if [ -f "${plugin_dir}.mcp.json" ]; then
+            playwright_available=true
+            break
+        fi
+    done
+fi
+
+if [ "$playwright_available" = false ]; then
+    echo "Setting up Playwright browser testing..."
+    mkdir -p .playwright-mcp
+
+    # Add to project-level MCP config
+    if [ -f ".mcp.json" ]; then
+        # Merge with existing config
+        if ! grep -q "playwright" .mcp.json 2>/dev/null; then
+            jq '. + {"playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}}' .mcp.json > .mcp.json.tmp && mv .mcp.json.tmp .mcp.json
+        fi
+    else
+        cat > .mcp.json << 'MCPEOF'
+{
+  "playwright": {
+    "command": "npx",
+    "args": ["@playwright/mcp@latest"]
+  }
+}
+MCPEOF
+    fi
+    echo "  Playwright MCP configured in .mcp.json"
+fi
+
 # ── Create the implementation loop script ─────────────
 
 cat > "$LOOP_SCRIPT" << 'LOOPEOF'
