@@ -286,10 +286,10 @@ while :; do
     fi
 
     # Review
-    STORY_PASSES=$(jq -r ".userStories[] | select(.id == $NEXT_ID) | .passes" "$PRD_FILE")
+    STORY_PASSES=$(jq -r --arg id "$NEXT_ID" '.userStories[] | select(.id == $id) | .passes' "$PRD_FILE")
     if [ "$STORY_PASSES" = "true" ]; then
         last_commit=$(git log --oneline -1 2>/dev/null || echo "no git")
-        ACCEPTANCE=$(jq -r ".userStories[] | select(.id == $NEXT_ID) | .acceptanceCriteria | join(\"\n- \")" "$PRD_FILE")
+        ACCEPTANCE=$(jq -r --arg id "$NEXT_ID" '.userStories[] | select(.id == $id) | .acceptanceCriteria | join("\n- ")' "$PRD_FILE")
 
         set +e
         review=$(claude -p --dangerously-skip-permissions \
@@ -307,11 +307,11 @@ If all pass: REVIEW_PASS")
         echo "$review" | tail -5
 
         if [[ "$review" == *"REVIEW_FAIL"* ]]; then
-            jq --argjson id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
+            jq --arg id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
             echo "REVIEW FEEDBACK: $review" >> "$PROGRESS_FILE"
             review_failures=$((review_failures + 1))
             [ $review_failures -ge 3 ] && {
-                jq --argjson id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = true' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
+                jq --arg id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = true' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
                 review_failures=0
             }
         else
