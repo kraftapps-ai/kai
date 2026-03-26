@@ -310,10 +310,19 @@ If all pass: REVIEW_PASS")
             jq --arg id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
             echo "REVIEW FEEDBACK: $review" >> "$PROGRESS_FILE"
             review_failures=$((review_failures + 1))
-            [ $review_failures -ge 3 ] && {
-                jq --arg id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = true' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
-                review_failures=0
-            }
+            if [ $review_failures -ge 3 ]; then
+                echo ""
+                echo "╔══════════════════════════════════════════════════╗"
+                echo "║  STALLED: Story #${NEXT_ID} failed review 3 times  ║"
+                echo "╚══════════════════════════════════════════════════╝"
+                echo ""
+                echo "Review feedback:" >> "$PROGRESS_FILE"
+                echo "$review" >> "$PROGRESS_FILE"
+                echo "" >> "$PROGRESS_FILE"
+                echo "STALLED: Story #${NEXT_ID} failed review 3 times. Human intervention needed." >> "$PROGRESS_FILE"
+                echo "Loop stopped at $(date). Waiting for human intervention."
+                exit 1
+            fi
         else
             review_failures=0
         fi
