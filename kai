@@ -268,7 +268,7 @@ while :; do
     start_time=$(date +%s)
 
     set +e
-    result=$(claude -p --dangerously-skip-permissions $context_files)
+    result=$(claude -p --dangerously-skip-permissions --system-prompt "$WORKER_PROMPT" $context_files)
     exit_code=$?
     set -e
 
