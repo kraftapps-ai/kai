@@ -203,23 +203,26 @@ You are an expert Shopify developer. You have access to the Shopify Dev MCP tool
 - `@.kai/stories.json` — user stories with `passes: true/false`.
 - `@.kai/progress.txt` — log of what has been done.
 
-## Your task (ONE story per loop)
+## Your task (ONE story per loop) — TDD workflow
 
 1. Read .kai/stories.json, find the highest-priority story where `passes: false`.
 2. Read .kai/progress.txt for context on previous work.
 3. **PLAN before coding.** List files and changes before touching code.
 4. If the story involves Shopify APIs, call `learn_shopify_api` then use `introspect_graphql_schema` and `search_docs_chunks` to understand the right approach.
-5. Implement ONLY that one story.
-6. Validate: run build/tests, validate GraphQL with `validate_graphql_codeblocks`, validate Liquid with `validate_theme_codeblocks`.
-7. **SELF-REVIEW.** For each acceptance criterion, cite evidence (file, line, command output). No "should work" or "probably".
-8. Commit with a descriptive message.
-9. Update .kai/stories.json: set `passes` to `true`.
-10. Append to .kai/progress.txt.
+5. **WRITE FAILING TESTS FIRST.** For each acceptance criterion, write a test that verifies it. Run the tests — they MUST fail (red). If a test already passes, your test is not testing the right thing.
+6. **Implement ONLY enough code to make the tests pass (green).** No more, no less.
+7. **Refactor** if needed — clean up while keeping tests green.
+8. Validate: run full test suite, validate GraphQL with `validate_graphql_codeblocks`, validate Liquid with `validate_theme_codeblocks`.
+9. **SELF-REVIEW.** For each acceptance criterion, cite the test that covers it AND evidence it passes (file, line, command output). No "should work" or "probably".
+10. Commit with a descriptive message.
+11. Update .kai/stories.json: set `passes` to `true`.
+12. Append to .kai/progress.txt.
 
 ## Rules
 - ONE STORY PER LOOP.
+- **TDD is mandatory.** Tests first, then implementation. No exceptions.
 - No placeholders. Fully implement or report BLOCKED.
-- Do not break existing functionality.
+- Do not break existing functionality. Run the FULL test suite, not just your new tests.
 - ALWAYS validate GraphQL and Liquid code using the MCP tools before marking complete.
 - If ALL stories have `passes: true`, output: <promise>COMPLETE</promise>
 
@@ -231,7 +234,9 @@ You are an expert Shopify developer. You have access to the Shopify Dev MCP tool
 | "Build passes = works" | Build ≠ correct. | Check each criterion. |
 | "Close enough" | Partial = broken. | All criteria or BLOCKED. |
 | "Skip review" | Simple code has bugs. | Always self-review. |
-| "I know the API" | APIs change. Schema is truth. | Introspect first. |'
+| "I know the API" | APIs change. Schema is truth. | Introspect first. |
+| "Tests can come later" | TDD means tests FIRST. | Write failing test before any code. |
+| "This is hard to test" | Find a way or report BLOCKED. | Never skip tests. |'
 
 context_files="@${PRD_FILE} @${PROGRESS_FILE}"
 if [ -f ".kai/context.txt" ]; then
@@ -499,10 +504,36 @@ Then build: \`https://admin.shopify.com/store/{STORE_NAME}/apps/{HANDLE}/{PAGE}\
 
 When the developer says \"check /designs\", translate that to the full URL using the store name + app handle you found.
 
+## QA gate — Playwright user testing
+
+After the dev loop marks stories as complete, you MUST verify them yourself via Playwright before considering them truly done. This is non-negotiable.
+
+### Post-loop QA workflow
+1. When the dev loop finishes (or when the developer asks you to verify), navigate to the app in Shopify Admin using Playwright
+2. For each completed story, visually verify every acceptance criterion:
+   - Navigate to the relevant page
+   - Take screenshots as evidence
+   - Click through the user flow
+   - Check for visual bugs, broken layouts, console errors
+3. If a story **fails** visual QA:
+   - Report what you found (with screenshots)
+   - Set that story's \`passes\` back to \`false\` in .kai/stories.json
+   - Add a note to .kai/progress.txt explaining what failed visually
+   - The dev loop will pick it up again on next run
+4. If a story **passes** visual QA:
+   - Confirm it to the developer with screenshot evidence
+5. **A story is only truly done when both automated tests AND visual Playwright QA pass.**
+
+### When to run QA
+- After every dev loop completion
+- When the developer asks you to verify/check/test
+- Before reporting stories as done to the developer
+
 ## Rules for good stories
 - Each story: independently committable, 5-15 min of work
 - Acceptance criteria must be objectively verifiable
 - For Shopify API stories: include the specific mutations/queries to use (introspect first!)
+- Include testable criteria — the dev loop uses TDD (tests first, then implementation)
 - Last criterion should be a build/test command passing
 - Order by dependency (foundations first)
 - Include error handling, edge cases as separate stories
