@@ -305,6 +305,14 @@ fi
 iteration=0
 review_failures=0
 
+# Kill orphaned child processes (vitest, esbuild, etc.) between iterations
+cleanup_orphans() {
+    for proc in vitest esbuild playwright; do
+        pkill -f "$proc" 2>/dev/null || true
+    done
+}
+trap cleanup_orphans EXIT
+
 while :; do
     iteration=$((iteration + 1))
     REMAINING=$(jq '[.userStories[] | select(.passes == false)] | length' "$PRD_FILE")
@@ -397,6 +405,7 @@ If all pass: REVIEW_PASS"
     fi
 
     echo "Done in $((elapsed / 60))m $((elapsed % 60))s"
+    cleanup_orphans
     echo ""
 done
 LOOPEOF
