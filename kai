@@ -227,6 +227,9 @@ PRD_FILE=".kai/stories.json"
 PROGRESS_FILE=".kai/progress.txt"
 LOOP_MCP_ARGS="--mcp-config .kai/loop-mcp.json"
 
+# Cap Node.js memory to prevent test runners from consuming all RAM
+export NODE_OPTIONS="--max-old-space-size=2048"
+
 # Stream output live when running in a tmux pane
 KAI_STREAM=false
 if [ -n "${TMUX:-}" ]; then
@@ -265,11 +268,15 @@ You are an expert Shopify developer. You have access to the Shopify Dev MCP tool
 2. Read .kai/progress.txt for context on previous work.
 3. **PLAN before coding.** List files and changes before touching code.
 4. If the story involves Shopify APIs, call `learn_shopify_api` then use `introspect_graphql_schema` and `search_docs_chunks` to understand the right approach.
-5. **WRITE FAILING TESTS FIRST.** For each acceptance criterion, write a test that verifies it. Run the tests — they MUST fail (red). If a test already passes, your test is not testing the right thing.
-6. **Implement ONLY enough code to make the tests pass (green).** No more, no less.
+5. **WRITE FAILING TESTS FIRST.** For each acceptance criterion, write a test that verifies it. Run ONLY the relevant test file(s) — they MUST fail (red). If a test already passes, your test is not testing the right thing.
+6. **Implement ONLY enough code to make the tests pass (green).** No more, no less. Run only the relevant test file(s) to verify.
 7. **Refactor** if needed — clean up while keeping tests green.
-8. Validate: run full test suite, validate GraphQL with `validate_graphql_codeblocks`, validate Liquid with `validate_theme_codeblocks`.
+8. **Final validation ONCE:** Run the full test suite ONE TIME at the end. Also validate GraphQL with `validate_graphql_codeblocks`, validate Liquid with `validate_theme_codeblocks`.
 9. **SELF-REVIEW.** For each acceptance criterion, cite the test that covers it AND evidence it passes (file, line, command output). No "should work" or "probably".
+
+## IMPORTANT: Resource management
+- **NEVER run the full test suite repeatedly.** Run targeted tests during development (e.g., `npx vitest run path/to/test.ts`). Only run the full suite ONCE as a final check before committing.
+- **Always use `npx vitest run`** (not `npx vitest` without `run`) — watch mode will hang forever.
 10. Commit with a descriptive message.
 11. Update .kai/stories.json: set `passes` to `true`.
 12. Append to .kai/progress.txt.
@@ -278,7 +285,7 @@ You are an expert Shopify developer. You have access to the Shopify Dev MCP tool
 - ONE STORY PER LOOP.
 - **TDD is mandatory.** Tests first, then implementation. No exceptions.
 - No placeholders. Fully implement or report BLOCKED.
-- Do not break existing functionality. Run the FULL test suite, not just your new tests.
+- Do not break existing functionality. Run the full test suite ONCE at the end as a final check.
 - ALWAYS validate GraphQL and Liquid code using the MCP tools before marking complete.
 - If ALL stories have `passes: true`, output: <promise>COMPLETE</promise>
 
