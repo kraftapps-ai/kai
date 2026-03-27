@@ -61,11 +61,25 @@ MEMORY_FILE=".kai/memory.md"
 LOOP_SCRIPT=".kai/loop.sh"
 
 
-# ── Ensure .kai/ is git-ignored ───────────────────────
+# ── Ensure .kai/ and Playwright artifacts are git-ignored ─
 
 mkdir -p .kai
-if [ ! -f ".kai/.gitignore" ]; then
-    echo "*" > .kai/.gitignore
+
+# Add to project .gitignore (not just .kai/.gitignore) to prevent tracking
+if [ -f ".gitignore" ]; then
+    for pattern in ".kai/" ".playwright-mcp/"; do
+        grep -qxF "$pattern" .gitignore 2>/dev/null || echo "$pattern" >> .gitignore
+    done
+else
+    printf '%s\n' ".kai/" ".playwright-mcp/" > .gitignore
+fi
+
+# Untrack .kai/ files if they were committed before the gitignore existed
+if git ls-files --cached .kai/ 2>/dev/null | grep -q .; then
+    git rm -r --cached .kai/ > /dev/null 2>&1 || true
+fi
+if git ls-files --cached .playwright-mcp/ 2>/dev/null | grep -q .; then
+    git rm -r --cached .playwright-mcp/ > /dev/null 2>&1 || true
 fi
 
 # ── Auto-init if needed ───────────────────────────────
