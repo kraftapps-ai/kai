@@ -338,24 +338,50 @@ while :; do
 
     start_time=$(date +%s)
 
+    # Run worker in background with heartbeat monitor
     set +e
-    if [ "$KAI_STREAM" = true ]; then
-        claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS --system-prompt "$WORKER_PROMPT" $context_files 2>&1 | tee .kai/worker-output.tmp
-        exit_code=${PIPESTATUS[0]}
-        result=$(cat .kai/worker-output.tmp)
-    else
-        result=$(claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS --system-prompt "$WORKER_PROMPT" $context_files)
-        exit_code=$?
-        echo "$result" | tail -20
-    fi
+    touch .kai/worker-heartbeat
+    claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS --system-prompt "$WORKER_PROMPT" $context_files > .kai/worker-output.tmp 2>&1 &
+    worker_pid=$!
+
+    echo "  Worker started (PID $worker_pid)"
+    while kill -0 $worker_pid 2>/dev/null; do
+        sleep 30
+        elapsed_now=$(( $(date +%s) - start_time ))
+        mins=$((elapsed_now / 60))
+        secs=$((elapsed_now % 60))
+
+        # Detect what's running
+        activity=""
+        pgrep -f "vitest" > /dev/null 2>&1 && activity="running tests"
+        pgrep -f "esbuild" > /dev/null 2>&1 && activity="${activity:+$activity + }building"
+        pgrep -f "npm run build" > /dev/null 2>&1 && activity="${activity:+$activity + }building"
+        [ -z "$activity" ] && activity="thinking"
+
+        # Show recently changed files
+        changed=$(find . \( -name '*.ts' -o -name '*.tsx' -o -name '*.php' -o -name '*.less' -o -name '*.css' -o -name '*.json' \) \
+            -not -path './node_modules/*' -not -path './.kai/*' -not -path './vendor/*' \
+            -newer .kai/worker-heartbeat -printf '%f\n' 2>/dev/null | sort -u | head -5 | tr '\n' ', ')
+
+        echo "  [${mins}m${secs}s] ${activity}${changed:+ | files: ${changed%,}}"
+        touch .kai/worker-heartbeat
+    done
+
+    wait $worker_pid
+    exit_code=$?
+    result=$(cat .kai/worker-output.tmp)
     set -e
 
     elapsed=$(( $(date +%s) - start_time ))
 
     if [ $exit_code -ne 0 ]; then
-        echo "Failed (code ${exit_code}). Restarting..."
+        echo "  Worker failed (code ${exit_code}). Last output:"
+        echo "$result" | tail -10
+        echo "  Restarting..."
         continue
     fi
+
+    echo "$result" | tail -20
 
     if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
         echo "All stories complete after $iteration iterations!"
@@ -365,6 +391,7 @@ while :; do
     # Review
     STORY_PASSES=$(jq -r --arg id "$NEXT_ID" '.userStories[] | select(.id == $id) | .passes' "$PRD_FILE")
     if [ "$STORY_PASSES" = "true" ]; then
+        echo "  Reviewing story #${NEXT_ID}..."
         last_commit=$(git log --oneline -1 2>/dev/null || echo "no git")
         ACCEPTANCE=$(jq -r --arg id "$NEXT_ID" '.userStories[] | select(.id == $id) | .acceptanceCriteria | join("\n- ")' "$PRD_FILE")
 
@@ -379,14 +406,20 @@ If ANY fails: REVIEW_FAIL: [reason]
 If all pass: REVIEW_PASS"
 
         set +e
-        if [ "$KAI_STREAM" = true ]; then
-            claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS "$REVIEW_PROMPT" 2>&1 | tee .kai/review-output.tmp
-            review=$(cat .kai/review-output.tmp)
-        else
-            review=$(claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS "$REVIEW_PROMPT")
-            echo "$review" | tail -5
-        fi
+        claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS "$REVIEW_PROMPT" > .kai/review-output.tmp 2>&1 &
+        review_pid=$!
+
+        while kill -0 $review_pid 2>/dev/null; do
+            sleep 15
+            elapsed_now=$(( $(date +%s) - start_time ))
+            echo "  [${elapsed_now}s] reviewing..."
+        done
+
+        wait $review_pid
+        review=$(cat .kai/review-output.tmp)
         set -e
+
+        echo "$review" | tail -5
 
         if [[ "$review" == *"REVIEW_FAIL"* ]]; then
             jq --arg id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
