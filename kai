@@ -459,12 +459,16 @@ The developer's name is: ${dev_name}"
 
 # ── Build loop run instructions for PM ────────────────
 
+LOOP_MONITOR="After starting the loop, IMMEDIATELY run \`/loop 5m\` with a prompt that reads .kai/stories.json and .kai/progress.txt to check progress, then report a brief status update to the developer (e.g., \"Story #X complete, working on #Y, 3 remaining\"). Stop the /loop when all stories are done or the loop has stopped."
+
 if [ "$KAI_TMUX" = true ] || [ -n "${TMUX:-}" ]; then
     LOOP_INSTRUCTIONS="To run implementation, execute: \`tmux send-keys -t ${KAI_TMUX_SESSION}:0.1 '.kai/loop.sh 2>&1 | tee .kai/loop.log' Enter\`
 The dev loop output streams live in the right tmux pane. You can also check \`tail -f .kai/loop.log\`.
-To stop the loop: \`tmux send-keys -t ${KAI_TMUX_SESSION}:0.1 C-c\`"
+To stop the loop: \`tmux send-keys -t ${KAI_TMUX_SESSION}:0.1 C-c\`
+${LOOP_MONITOR}"
 else
-    LOOP_INSTRUCTIONS="To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` then monitor with \`tail -f .kai/loop.log\`"
+    LOOP_INSTRUCTIONS="To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` then monitor with \`tail -f .kai/loop.log\`
+${LOOP_MONITOR}"
 fi
 
 # ── Build Claude args ─────────────────────────────────
