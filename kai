@@ -291,6 +291,7 @@ You are an expert Shopify developer. You have access to the Shopify Dev MCP tool
 
 ## Rules
 - ONE STORY PER LOOP.
+- **NEVER switch branches.** Always commit to the current branch. Do NOT run `git checkout`, `git switch`, or `git branch`. The PM manages branches — you just commit your work.
 - **TDD is mandatory.** Tests first, then implementation. No exceptions.
 - No placeholders. Fully implement or report BLOCKED.
 - Do not break existing functionality. Run the full test suite ONCE at the end as a final check.
