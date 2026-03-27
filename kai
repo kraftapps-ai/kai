@@ -50,8 +50,7 @@ if [ "$KAI_TMUX" = true ]; then
         # New session: pane 0 = PM, pane 1 = dev loop (waiting)
         tmux new-session -d -s "$KAI_TMUX_SESSION" \
             "kai --no-tmux $(printf '%q ' "$@")"
-        tmux split-window -h -t "${KAI_TMUX_SESSION}:0"
-        tmux select-pane -t "${KAI_TMUX_SESSION}:0.0"
+        tmux split-window -h -d -t "${KAI_TMUX_SESSION}:0"
         exec tmux attach-session -t "$KAI_TMUX_SESSION"
     fi
 fi
