@@ -15,6 +15,48 @@ if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
     exit 0
 fi
 
+# ── Parse kai flags ──────────────────────────────────
+
+KAI_TMUX=true
+PASSTHROUGH_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --no-tmux) KAI_TMUX=false ;;
+        --new) PASSTHROUGH_ARGS+=("$arg") ;;
+        *) PASSTHROUGH_ARGS+=("$arg") ;;
+    esac
+done
+set -- "${PASSTHROUGH_ARGS[@]}"
+
+# Fall back if tmux is not installed
+if ! command -v tmux &>/dev/null; then
+    KAI_TMUX=false
+fi
+
+# ── tmux session management ──────────────────────────
+
+KAI_TMUX_SESSION="kai"
+
+if [ "$KAI_TMUX" = true ]; then
+    # Already inside the kai tmux session — skip setup, run PM directly
+    if [ -n "${TMUX:-}" ] && [ "$(tmux display-message -p '#S' 2>/dev/null)" = "$KAI_TMUX_SESSION" ]; then
+        : # continue to normal execution below
+    elif tmux has-session -t "$KAI_TMUX_SESSION" 2>/dev/null; then
+        # Existing session — respawn PM in pane 0, reattach
+        tmux respawn-pane -k -t "${KAI_TMUX_SESSION}:0.0" \
+            "kai --no-tmux $(printf '%q ' "$@")"
+        exec tmux attach-session -t "$KAI_TMUX_SESSION"
+    else
+        # New session: pane 0 = PM, pane 1 = dev loop (waiting)
+        tmux new-session -d -s "$KAI_TMUX_SESSION" \
+            "kai --no-tmux $(printf '%q ' "$@")"
+        tmux split-window -h -t "${KAI_TMUX_SESSION}:0" \
+            "echo '⏳ Dev loop pane — waiting for PM to start the loop...'; cat"
+        tmux select-pane -t "${KAI_TMUX_SESSION}:0.0"
+        exec tmux attach-session -t "$KAI_TMUX_SESSION"
+    fi
+fi
+
 PRD_FILE=".kai/stories.json"
 PROGRESS_FILE=".kai/progress.txt"
 MEMORY_FILE=".kai/memory.md"
@@ -167,6 +209,15 @@ MCPEOF
     echo "  MCP servers configured in .mcp.json"
 fi
 
+# ── Create loop MCP config (no Playwright) ───────────
+
+# Worker/reviewer don't need Playwright — it spawns Chromium and causes freezes
+if [ -f ".mcp.json" ]; then
+    jq 'del(.mcpServers.playwright)' .mcp.json > .kai/loop-mcp.json
+else
+    echo '{"mcpServers":{}}' > .kai/loop-mcp.json
+fi
+
 # ── Create the implementation loop script ─────────────
 
 cat > "$LOOP_SCRIPT" << 'LOOPEOF'
@@ -176,6 +227,13 @@ set -e
 
 PRD_FILE=".kai/stories.json"
 PROGRESS_FILE=".kai/progress.txt"
+LOOP_MCP_ARGS="--mcp-config .kai/loop-mcp.json"
+
+# Stream output live when running in a tmux pane
+KAI_STREAM=false
+if [ -n "${TMUX:-}" ]; then
+    KAI_STREAM=true
+fi
 
 WORKER_PROMPT='You are an autonomous AI developer specializing in Shopify app and theme development.
 
@@ -268,12 +326,18 @@ while :; do
     start_time=$(date +%s)
 
     set +e
-    result=$(claude -p --dangerously-skip-permissions --system-prompt "$WORKER_PROMPT" $context_files)
-    exit_code=$?
+    if [ "$KAI_STREAM" = true ]; then
+        claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS --system-prompt "$WORKER_PROMPT" $context_files 2>&1 | tee .kai/worker-output.tmp
+        exit_code=${PIPESTATUS[0]}
+        result=$(cat .kai/worker-output.tmp)
+    else
+        result=$(claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS --system-prompt "$WORKER_PROMPT" $context_files)
+        exit_code=$?
+        echo "$result" | tail -20
+    fi
     set -e
 
     elapsed=$(( $(date +%s) - start_time ))
-    echo "$result" | tail -20
 
     if [ $exit_code -ne 0 ]; then
         echo "Failed (code ${exit_code}). Restarting..."
@@ -291,9 +355,7 @@ while :; do
         last_commit=$(git log --oneline -1 2>/dev/null || echo "no git")
         ACCEPTANCE=$(jq -r --arg id "$NEXT_ID" '.userStories[] | select(.id == $id) | .acceptanceCriteria | join("\n- ")' "$PRD_FILE")
 
-        set +e
-        review=$(claude -p --dangerously-skip-permissions \
-          "You are a Shopify expert code reviewer. Story #${NEXT_ID} ('${NEXT}') claims complete.
+        REVIEW_PROMPT="You are a Shopify expert code reviewer. Story #${NEXT_ID} ('${NEXT}') claims complete.
 Last commit: ${last_commit}
 Acceptance criteria:
 - ${ACCEPTANCE}
@@ -301,10 +363,17 @@ Read git diff HEAD~1 HEAD. Verify EACH criterion. Be skeptical.
 If the story involves Shopify APIs, use introspect_graphql_schema to verify the code uses correct fields and types.
 If it involves Liquid, use validate_theme_codeblocks to check for errors.
 If ANY fails: REVIEW_FAIL: [reason]
-If all pass: REVIEW_PASS")
-        set -e
+If all pass: REVIEW_PASS"
 
-        echo "$review" | tail -5
+        set +e
+        if [ "$KAI_STREAM" = true ]; then
+            claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS "$REVIEW_PROMPT" 2>&1 | tee .kai/review-output.tmp
+            review=$(cat .kai/review-output.tmp)
+        else
+            review=$(claude -p --dangerously-skip-permissions $LOOP_MCP_ARGS "$REVIEW_PROMPT")
+            echo "$review" | tail -5
+        fi
+        set -e
 
         if [[ "$review" == *"REVIEW_FAIL"* ]]; then
             jq --arg id "$NEXT_ID" '(.userStories[] | select(.id == $id)).passes = false' "$PRD_FILE" > "${PRD_FILE}.tmp" && mv "${PRD_FILE}.tmp" "$PRD_FILE"
@@ -373,6 +442,16 @@ dev_name=$(git config user.name 2>/dev/null || echo "")
 dev_greeting=""
 [ -n "$dev_name" ] && dev_greeting="
 The developer's name is: ${dev_name}"
+
+# ── Build loop run instructions for PM ────────────────
+
+if [ "$KAI_TMUX" = true ] || [ -n "${TMUX:-}" ]; then
+    LOOP_INSTRUCTIONS="To run implementation, execute: \`tmux send-keys -t ${KAI_TMUX_SESSION}:0.1 '.kai/loop.sh 2>&1 | tee .kai/loop.log' Enter\`
+The dev loop output streams live in the right tmux pane. You can also check \`tail -f .kai/loop.log\`.
+To stop the loop: \`tmux send-keys -t ${KAI_TMUX_SESSION}:0.1 C-c\`"
+else
+    LOOP_INSTRUCTIONS="To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` then monitor with \`tail -f .kai/loop.log\`"
+fi
 
 # ── Build Claude args ─────────────────────────────────
 
@@ -471,7 +550,7 @@ OAuth authentication happens automatically via browser on first use — no API k
 
 Stories live in .kai/stories.json. Each has: id, title, description, acceptanceCriteria, priority, passes (true/false).
 To add stories, edit .kai/stories.json directly using the Edit or Write tool.
-To run implementation, execute: \`nohup .kai/loop.sh > .kai/loop.log 2>&1 &\` then monitor with \`tail -f .kai/loop.log\`
+${LOOP_INSTRUCTIONS}
 
 ## Browser testing (Playwright)
 
